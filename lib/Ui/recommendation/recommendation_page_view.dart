@@ -1,6 +1,6 @@
 // Widget cha quản lý các page con recommendation, chỉ hiện khi user đăng nhập lần đầu
 import 'package:flutter/material.dart';
-import 'package:tourn/Ui/main/category/home/home_page.dart';
+import 'package:tourn/Ui/main/main_page.dart';
 import 'package:tourn/Ui/recommendation/recommendation_child_page.dart';
 import 'package:tourn/ultils.enums/recommendation_page_position.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -108,9 +108,7 @@ class _recommendationpageviewState extends State<recommendationpageview> {
   void _gotowelcomepage() {
     Navigator.pushReplacement(
       context,
-      MaterialPageRoute(
-        builder: (context) => const homepage(isFirsTimeinstallApp: true),
-      ),
+      MaterialPageRoute(builder: (context) => const Mainpage()),
     );
   }
 

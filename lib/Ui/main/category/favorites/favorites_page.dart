@@ -1,35 +1,26 @@
 import 'package:flutter/material.dart';
+import 'package:tourn/Ui/main/category/favorites/pages/Baiviet.dart';
+import 'package:tourn/Ui/main/category/favorites/pages/Trangthongbao.dart';
 
-class favorites extends StatefulWidget {
+class favorites extends StatelessWidget {
   const favorites({super.key});
 
-  @override
-  State<favorites> createState() => _favoritesState();
-}
-
-class _favoritesState extends State<favorites> {
+  // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: SafeArea(
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.start,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [_buildfavoritespageTitle()],
-          ),
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        scaffoldBackgroundColor: Color(0xFFF5F5F3),
+        appBarTheme: AppBarTheme(
+          backgroundColor: Color(0xFFF5F5F3),
+          foregroundColor: Color(0xFF113953),
         ),
       ),
-    );
-  }
-
-  Widget _buildfavoritespageTitle() {
-    return Container(
-      margin: EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-      child: Text(
-        'Yêu thích',
-        style: TextStyle(fontSize: 30, fontWeight: FontWeight.bold),
-      ),
+      routes: {
+        "/": (context) => HomePage(),
+        "/baiviet": (context) => Baiviet(),
+      },
     );
   }
 }

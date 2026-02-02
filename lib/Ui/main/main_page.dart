@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:tourn/Ui/main/category/favorites/favorites_page.dart';
-import 'package:tourn/Ui/main/category/home/home_page.dart';
+import 'package:tourn/Ui/main/category/home/home.dart';
 import 'package:tourn/Ui/main/category/mail/mail_page.dart';
 import 'package:tourn/Ui/main/category/map/map_page.dart';
-import 'package:tourn/Ui/main/category/menu/menu.dart';
+import 'package:tourn/Ui/main/category/menu/Menu.dart';
 import 'package:easy_localization/easy_localization.dart';
 
 class Mainpage extends StatefulWidget {
-  const Mainpage({super.key});
+  final int initialTab; // Tab khởi đầu
+
+  const Mainpage({super.key, this.initialTab = 0});
 
   @override
   State<Mainpage> createState() => _MainpageState();
@@ -16,19 +18,21 @@ class Mainpage extends StatefulWidget {
 class _MainpageState extends State<Mainpage> {
   List<Widget> pages = [];
   // Danh sách các trang để hiển thị khi chọn từ thanh điều hướng dưới cùng
-  int _currentPage = 0; // Xóa final để có thể thay đổi giá trị
+  late int _currentPage; // Sử dụng late để khởi tạo trong initState
 
   @override
   void initState() {
     // TODO: implement initState
     super.initState();
 
+    _currentPage = widget.initialTab; // Sử dụng initialTab
+
     pages = [
-      homepage(isFirsTimeinstallApp: true), // Trang Home
+      Home(isFirsTimeinstallApp: true), // Trang Home
       mailpage(), // Trang Mail
       mappage(), // Trang Map
       favorites(), // Trang Favorites
-      menupage(), // Trang Profile
+      Menu(), // Trang Profile
     ];
   }
 

@@ -1,24 +1,25 @@
 // ignore: unused_import
 import 'package:flutter/material.dart';
-import 'detail.dart';
+import 'package:tourn/Ui/main/category/mail/pages/ChatPage.dart';
 
 class ActivateChats extends StatelessWidget {
   const ActivateChats({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final bool isOnline = true;
     return Padding(
-      padding: EdgeInsetsGeometry.only(top: 25, left: 5),
-      child: InkWell(
-        onTap: () {
-          _gotodetail(context);
-          // Xử lý sự kiện khi nhấn vào đây
-        },
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
+      padding: EdgeInsets.only(top: 25, left: 5),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: InkWell(
+          onTap: () => Navigator.of(
+            context,
+            rootNavigator: true,
+          ).push(MaterialPageRoute(builder: (context) => const ChatPage())),
           child: Row(
             children: [
-              for (int i = 0; i < 100; i++)
+              for (int i = 0; i < 10; i++)
                 Padding(
                   padding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                   child: Container(
@@ -37,9 +38,36 @@ class ActivateChats extends StatelessWidget {
                         ),
                       ],
                     ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(35),
-                      child: Image.asset("asset/images/employee-5.png"),
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(35),
+                          child: Image.asset(
+                            "asset/images/employee-5.png",
+                            width: 65,
+                            height: 65,
+                            fit: BoxFit.cover,
+                          ),
+                        ),
+                        if (isOnline)
+                          Positioned(
+                            bottom: 0,
+                            right: 0,
+                            child: Container(
+                              width: 14,
+                              height: 14,
+                              decoration: BoxDecoration(
+                                color: Colors.green,
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: Colors.white,
+                                  width: 2,
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                   ),
                 ),
@@ -47,13 +75,6 @@ class ActivateChats extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-
-  void _gotodetail(BuildContext context) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => Detailpage()),
     );
   }
 }

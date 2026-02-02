@@ -1,5 +1,0 @@
-[33m9315c09[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m)[m HEAD@{0}: checkout: moving from main to main
-[33m9315c09[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m)[m HEAD@{1}: rebase (finish): returning to refs/heads/main
-[33m9315c09[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m)[m HEAD@{2}: pull origin main --rebase (start): checkout 9315c09f92bbb1385554abb3f81b5807ec4ef036
-[33m1a23c17[m HEAD@{3}: Branch: renamed refs/heads/master to refs/heads/main
-[33m1a23c17[m HEAD@{5}: commit (initial): lần 2
