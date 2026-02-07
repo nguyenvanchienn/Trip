@@ -96,10 +96,11 @@ class _EmailListPageState extends State<EmailListPage> {
     }
     await EmailListService.addEmail(email);
     await _load();
-    if (mounted)
+    if (mounted) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Đã thêm email')));
+    }
   }
 
   Future<void> _editEmail(int index) async {
@@ -136,10 +137,11 @@ class _EmailListPageState extends State<EmailListPage> {
     }
     await EmailListService.updateEmail(index, email);
     await _load();
-    if (mounted)
+    if (mounted) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Đã cập nhật')));
+    }
   }
 
   Future<void> _removeEmail(int index) async {
@@ -163,10 +165,11 @@ class _EmailListPageState extends State<EmailListPage> {
     if (ok != true) return;
     await EmailListService.removeAt(index);
     await _load();
-    if (mounted)
+    if (mounted) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Đã xoá')));
+    }
   }
 
   @override

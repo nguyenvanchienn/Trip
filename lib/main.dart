@@ -1,7 +1,7 @@
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:tourn/Ui/splash/splash.dart';
+import 'package:tourn/Ui/main/main_page.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:tourn/Ui/domain/domain_data_sources/firebase_auth_sevice.dart';
 import 'firebase_options.dart';
@@ -113,7 +113,7 @@ class MyApp extends StatelessWidget {
           .localizationDelegates, // Thiết lập các delegate cho localization
       locale: context.locale,
       supportedLocales: context.supportedLocales,
-      home: SplashScreen(), // Trang chính của ứng dụng
+      home: Mainpage(), // Trang chính của ứng dụng
     );
   }
 }

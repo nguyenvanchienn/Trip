@@ -413,8 +413,9 @@ class _createandeditcontentState extends State<createandeditcontent> {
                   _bgColor.value = colors[i];
                   if (hadFocus) {
                     WidgetsBinding.instance.addPostFrameCallback((_) {
-                      if (mounted)
+                      if (mounted) {
                         FocusScope.of(context).requestFocus(_focusNode);
+                      }
                     });
                   }
                 },

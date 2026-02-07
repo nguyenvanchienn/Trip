@@ -29,14 +29,13 @@ class _ChatPageState extends State<ChatPage> {
     super.initState();
     // Tin nhắn mẫu ban đầu
     _messages.add({
-      'text': 'Hello chien how are you?',
+      'text': 'xin chào bạn!',
       'isMe': false,
       'time': DateTime.now(),
       'status': 'seen',
     });
     _messages.add({
-      'text':
-          'Hello chien, i am fine thanks for asking what about you i hope you will be fine?',
+      'text': 'xin chào bạn!',
       'isMe': true,
       'time': DateTime.now(),
       'status': 'seen',
@@ -147,6 +146,48 @@ class _ChatPageState extends State<ChatPage> {
         );
       }
     });
+  }
+
+  // Mở modal chọn file/ảnh/vị trí khi nhấn nút '+'
+  void _onAttachPressed() {
+    showModalBottomSheet(
+      context: context,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: Icon(Icons.photo),
+                title: Text('Ảnh & Video'),
+                onTap: () {
+                  Navigator.pop(context);
+                  // TODO: tích hợp chọn ảnh
+                },
+              ),
+              ListTile(
+                leading: Icon(Icons.attach_file),
+                title: Text('Tệp'),
+                onTap: () {
+                  Navigator.pop(context);
+                },
+              ),
+              ListTile(
+                leading: Icon(Icons.place),
+                title: Text('Vị trí'),
+                onTap: () {
+                  Navigator.pop(context);
+                },
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   bool _isOnlyEmoji(String text) {
@@ -534,6 +575,53 @@ class _ChatPageState extends State<ChatPage> {
       child: SafeArea(
         child: Row(
           children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(22),
+                border: Border.all(color: Color(0xFFE0E0E0), width: 1),
+              ),
+              child: IconButton(
+                icon: Icon(Icons.add, color: Color(0xFF113953), size: 22),
+                onPressed: _onAttachPressed,
+              ),
+            ),
+
+            const SizedBox(width: 8),
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Color(0xFFE0E0E0), width: 1),
+              ),
+              child: IconButton(
+                icon: Icon(Icons.image, color: Color(0xFF113953), size: 25),
+                onPressed: () {},
+              ),
+            ),
+            const SizedBox(width: 8),
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Color(0xFFE0E0E0), width: 1),
+              ),
+              child: IconButton(
+                icon: Icon(
+                  Icons.keyboard_voice_sharp,
+                  color: Color(0xFF113953),
+                  size: 25,
+                ),
+                onPressed: () {},
+              ),
+            ),
+            const SizedBox(width: 8),
             Expanded(
               child: Container(
                 decoration: BoxDecoration(
@@ -547,7 +635,7 @@ class _ChatPageState extends State<ChatPage> {
                       child: TextField(
                         controller: _messageController,
                         decoration: const InputDecoration(
-                          hintText: 'Nhập tin nhắn...',
+                          hintText: 'Aa',
                           border: InputBorder.none,
                           contentPadding: EdgeInsets.symmetric(vertical: 12),
                         ),

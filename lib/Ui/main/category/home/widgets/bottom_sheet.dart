@@ -1,6 +1,10 @@
 // đây là file chứa code của bottom sheet trong trang home hình dấu + ngoài màn hinh chính của home
 import 'package:flutter/material.dart';
-import 'package:tourn/Ui/main/category/home/widgets/create_and_edit_content.dart';
+import 'package:tourn/Ui/main/category/home/widgets/bottom_add/create_and_edit_content.dart';
+import 'package:tourn/Ui/main/category/home/widgets/check_in.dart';
+import 'package:tourn/Ui/main/category/home/widgets/bottom_add/film_reel.dart';
+import 'package:tourn/Ui/main/category/home/widgets/bottom_add/live_stream.dart';
+import 'package:tourn/Ui/main/category/home/widgets/bottom_add/create_poll.dart';
 import 'package:tourn/Ui/main/category/mail/widgets/AIbottonchat.dart';
 
 Future<dynamic> bottom(BuildContext context) {
@@ -85,24 +89,100 @@ Future<dynamic> bottom(BuildContext context) {
                           title: Text("Tạo bài viết"),
                         ),
                       ),
-                      const ListTile(
-                        leading: Icon(Icons.location_on, color: Colors.black),
-                        title: Text("Check in"),
-                      ),
-                      const ListTile(
-                        leading: Icon(Icons.movie, color: Colors.black),
-                        title: Text("Thước phim"),
-                      ),
-                      const ListTile(
-                        leading: Icon(Icons.videocam, color: Colors.red),
-                        title: Text(
-                          "Phát trực tiếp",
-                          style: TextStyle(color: Colors.black),
+
+                      // Check in -> mở trang CheckIn (trả về kết quả khi chọn vị trí)
+                      InkWell(
+                        onTap: () async {
+                          Navigator.of(context).pop();
+                          final result = await Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const CheckIn(),
+                            ),
+                          );
+                          if (result != null) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Check in: $result')),
+                            );
+                          }
+                        },
+                        child: const ListTile(
+                          leading: Icon(Icons.location_on, color: Colors.black),
+                          title: Text("Check in"),
                         ),
                       ),
-                      const ListTile(
-                        leading: Icon(Icons.help_outline, color: Colors.black),
-                        title: Text("Đặt câu hỏi"),
+
+                      // Thước phim
+                      InkWell(
+                        onTap: () async {
+                          Navigator.of(context).pop();
+                          final r = await Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const FilmReelPage(),
+                            ),
+                          );
+                          if (r != null && r is Map) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  'Đã tạo thước phim: ${r['title']}',
+                                ),
+                              ),
+                            );
+                          }
+                        },
+                        child: const ListTile(
+                          leading: Icon(Icons.movie, color: Colors.black),
+                          title: Text("Thước phim"),
+                        ),
+                      ),
+
+                      // Phát trực tiếp
+                      InkWell(
+                        onTap: () {
+                          Navigator.of(context).pop();
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const LiveStreamPage(),
+                            ),
+                          );
+                        },
+                        child: const ListTile(
+                          leading: Icon(Icons.videocam, color: Colors.red),
+                          title: Text(
+                            "Phát trực tiếp",
+                            style: TextStyle(color: Colors.black),
+                          ),
+                        ),
+                      ),
+
+                      // Đặt câu hỏi (Poll)
+                      InkWell(
+                        onTap: () async {
+                          Navigator.of(context).pop();
+                          final poll = await Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const CreatePollPage(),
+                            ),
+                          );
+                          if (poll != null && poll is Map) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Đã tạo cuộc thăm dò'),
+                              ),
+                            );
+                          }
+                        },
+                        child: const ListTile(
+                          leading: Icon(
+                            Icons.help_outline,
+                            color: Colors.black,
+                          ),
+                          title: Text("Đặt câu hỏi"),
+                        ),
                       ),
                       InkWell(
                         onTap: () {

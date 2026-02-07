@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
-import 'Menu_items/introduce_receive_money.dart';
-import 'Menu_items/my_store.dart';
-import 'Menu_items/qr_receive.dart';
-import 'Menu_items/open_nice_account.dart';
-import 'Menu_items/digi_trading.dart';
-import 'Menu_items/explore.dart';
-import 'Menu_items/smart_finance.dart';
-import 'Menu_items/installment.dart';
+import 'Menu_items/kholuutru.dart';
+import 'Menu_items/chiasethoigianthuc.dart';
+import 'Menu_items/taichinhthongminh.dart';
+import 'Menu_items/goiyngansachthongminh.dart';
+import 'Menu_items/Ghichu.dart';
+import 'Menu_items/thanhtoanvachiase.dart';
+import 'Menu_items/khamphadiadiem.dart';
+import 'Menu_items/goiyhanhtrinh.dart';
+import 'Menu_items/Thoitiet.dart';
 
 class QuickAccessGrid extends StatelessWidget {
   const QuickAccessGrid({super.key});
@@ -42,14 +43,15 @@ class QuickAccessGrid extends StatelessWidget {
               spacing: spacing,
               runSpacing: runSpacing,
               children: [
-                SizedBox(width: itemWidth, child: IntroduceReceiveMoney()),
-                SizedBox(width: itemWidth, child: MyStore()),
-                SizedBox(width: itemWidth, child: QrReceive()),
-                SizedBox(width: itemWidth, child: OpenNiceAccount()),
-                SizedBox(width: itemWidth, child: DigiTrading()),
-                SizedBox(width: itemWidth, child: Explore()),
-                SizedBox(width: itemWidth, child: SmartFinance()),
-                SizedBox(width: itemWidth, child: Installment()),
+                SizedBox(width: itemWidth, child: Kholuutru()),
+                SizedBox(width: itemWidth, child: Chiasethoigianthuc()),
+                SizedBox(width: itemWidth, child: Taichinhthongminh()),
+                SizedBox(width: itemWidth, child: Goiyngansachthongminh()),
+                SizedBox(width: itemWidth, child: Ghichu()),
+                SizedBox(width: itemWidth, child: Thanhtoanvachiase()),
+                SizedBox(width: itemWidth, child: Khamphadiadiem()),
+                SizedBox(width: itemWidth, child: Goiyhanhtrinh()),
+                SizedBox(width: itemWidth, child: Thoitiet()),
               ],
             );
           },

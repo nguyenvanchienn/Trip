@@ -258,12 +258,14 @@ class _RegistrationFormPageState extends State<RegistrationFormPage> {
     if (accountValue.isEmpty) {
     } else if (accountValue.contains('@')) {
       final emailRegex = RegExp(r'^[^@]+@[^@]+\.[^@]+$');
-      if (!emailRegex.hasMatch(accountValue))
+      if (!emailRegex.hasMatch(accountValue)) {
         accountErr = 'Số điện thoại hoặc email không hợp lệ';
+      }
     } else {
       final phoneRegex = RegExp(r'^[0-9]+$');
-      if (!phoneRegex.hasMatch(accountValue) || accountValue.length < 9)
+      if (!phoneRegex.hasMatch(accountValue) || accountValue.length < 9) {
         accountErr = 'Số điện thoại hoặc email không hợp lệ';
+      }
     }
 
     // Validate password

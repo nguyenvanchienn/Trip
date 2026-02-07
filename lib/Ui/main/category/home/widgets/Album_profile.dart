@@ -1,6 +1,6 @@
 // Album grid for profile page
 import 'package:flutter/material.dart';
-import 'package:tourn/Ui/main/category/home/widgets/create_album.dart';
+import 'package:tourn/Ui/main/category/home/widgets/bottom_add/create_album.dart';
 import 'package:tourn/Ui/main/category/home/widgets/detail_album.dart';
 
 class AlbumProfile extends StatelessWidget {

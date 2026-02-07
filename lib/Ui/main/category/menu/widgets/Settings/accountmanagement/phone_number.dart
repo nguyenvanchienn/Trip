@@ -96,10 +96,11 @@ class _PhoneListPageState extends State<PhoneListPage> {
     }
     await PhoneListService.addPhone(phone);
     await _load();
-    if (mounted)
+    if (mounted) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Đã thêm số di động')));
+    }
   }
 
   Future<void> _editPhone(int index) async {
@@ -136,10 +137,11 @@ class _PhoneListPageState extends State<PhoneListPage> {
     }
     await PhoneListService.updatePhone(index, phone);
     await _load();
-    if (mounted)
+    if (mounted) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Đã cập nhật')));
+    }
   }
 
   Future<void> _removePhone(int index) async {
@@ -163,10 +165,11 @@ class _PhoneListPageState extends State<PhoneListPage> {
     if (ok != true) return;
     await PhoneListService.removeAt(index);
     await _load();
-    if (mounted)
+    if (mounted) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Đã xoá')));
+    }
   }
 
   @override

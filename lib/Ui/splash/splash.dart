@@ -3,26 +3,32 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tourn/Ui/onboarding/onboarding_page_view.dart';
 import 'package:tourn/Ui/welcome/welcome_page.dart';
 
-class SplashScreen extends StatelessWidget {
+class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
 
-  Future<void> checkappstatus(BuildContext context) async {
-    // Hàm giả lập kiểm tra trạng thái ứng dụng
-    await Future.delayed(
-      const Duration(seconds: 3),
-    ); // Giả lập thời gian chờ 3 giây
+  @override
+  State<SplashScreen> createState() => _SplashScreenState();
+}
+
+class _SplashScreenState extends State<SplashScreen> {
+  @override
+  void initState() {
+    super.initState();
+    _checkAppStatus();
+  }
+
+  Future<void> _checkAppStatus() async {
+    await Future.delayed(const Duration(seconds: 3));
     final iscomplete = await isonboardingcompleted();
+    if (!mounted) return;
     if (iscomplete) {
-      // Nếu đã hoàn thành onboarding, chuyển đến trang chào mừng
-      if (!context.mounted) return; // Kiểm tra xem context còn hợp lệ không
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
           builder: (context) => WelcomePage(isFirsTimeinstallApp: false),
-        ), // Truyền tham số isFirsTimeinstallApp là false
+        ),
       );
     } else {
-      // Nếu chưa hoàn thành onboarding, chuyển đến trang onboarding
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (context) => onboardingpageview()),
@@ -47,8 +53,8 @@ class SplashScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    checkappstatus(context);
-    // Kiểm tra trạng thái ứng dụng khi xây dựng giao diện
+    // trạng thái ứng dụng đã được kiểm tra trong initState
+    // Kiểm tra trạng thái ứng dụng khi xây dựng giao diện (không gọi ở đây)
     return Scaffold(
       body: Container(
         decoration: BoxDecoration(

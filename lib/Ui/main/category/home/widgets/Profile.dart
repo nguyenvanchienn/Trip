@@ -5,7 +5,7 @@ import 'package:tourn/Ui/main/category/home/widgets/Album_profile.dart';
 import 'package:tourn/Ui/main/category/home/widgets/Followers_and_Are_following.dart';
 import 'package:tourn/Ui/main/category/home/widgets/Newfeed_profile.dart';
 import 'package:tourn/Ui/main/category/home/widgets/check_in.dart';
-import 'package:tourn/Ui/main/category/home/widgets/create_and_edit_content.dart';
+import 'package:tourn/Ui/main/category/home/widgets/bottom_add/create_and_edit_content.dart';
 import 'package:tourn/Ui/main/category/home/widgets/edit_profile.dart';
 import 'package:tourn/Ui/main/category/home/widgets/intro_profile.dart';
 import 'package:tourn/Ui/main/category/home/widgets/search.dart';

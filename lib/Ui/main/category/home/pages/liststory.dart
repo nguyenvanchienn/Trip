@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:tourn/Ui/main/category/home/widgets/create_and_edit_content.dart';
+import 'package:tourn/Ui/main/category/home/widgets/bottom_add/create_and_edit_content.dart';
 import 'package:tourn/Ui/main/category/home/widgets/story/story_viewer.dart';
 import 'package:image_picker/image_picker.dart';
 

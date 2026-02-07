@@ -1,7 +1,6 @@
 // đây là file chứa code của phần trang tin tức trong phần home
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:tourn/Ui/main/category/favorites/pages/Baiviet.dart';
 import 'package:tourn/Ui/main/category/home/widgets/profile.dart';
 import 'package:tourn/Ui/main/category/home/widgets/post_actions.dart';
@@ -44,11 +43,11 @@ class NewfeedState extends State<Newfeed> {
       'icon': _iconFor(_visibility),
 
       'liked': false,
-      'avatar': 'asset/images/anh-mo-ta.jpg',
+      'avatar': 'asset/images/OIP.jpg',
       'following': false,
       'text':
           'Hôm nay mình đã khám phá một nơi rất đẹp — khung cảnh tuyệt vời và đồ ăn ngon. Mọi người nên thử khi có dịp!',
-      'image': 'asset/images/anh-mo-ta.jpg',
+      'image': 'asset/images/anhdemo.jpeg',
       'likes': 128,
       'comments': 24,
       'shares': 6,

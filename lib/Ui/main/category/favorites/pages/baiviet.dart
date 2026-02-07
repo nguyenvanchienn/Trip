@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:tourn/Ui/main/category/home/widgets/community_post_card.dart';
 
 class Baiviet extends StatefulWidget {
   final Map<String, dynamic>? post;
-  const Baiviet({super.key, this.post});
+  final List<Map<String, dynamic>>? relatedPosts;
+
+  const Baiviet({super.key, this.post, this.relatedPosts});
 
   @override
   State<Baiviet> createState() => _BaivietState();
@@ -11,26 +14,31 @@ class Baiviet extends StatefulWidget {
 class _BaivietState extends State<Baiviet> {
   late Map<String, dynamic> _post;
   late List<Map<String, dynamic>> _comments;
+  late List<Map<String, dynamic>> _relatedPosts;
   final TextEditingController _commentController = TextEditingController();
   bool _liked = false;
 
   @override
   void initState() {
     super.initState();
-    _post =
-        widget.post ??
-        {
-          'author': 'Nguyễn Chiến',
-          'avatar': 'asset/images/anh-mo-ta.jpg',
-          'visibility': 0,
-          'timestamp': DateTime.now().subtract(const Duration(minutes: 2)),
-          'text':
-              'Hôm nay mình đã khám phá một nơi rất đẹp — khung cảnh tuyệt vời và đồ ăn ngon. Mọi người nên thử khi có dịp!',
-          'image': 'asset/images/anh-mo-ta.jpg',
-          'likes': 128,
-          'comments': 2,
-          'shares': 6,
-        };
+    // Merge provided post with defaults so missing fields (eg. timestamp) won't crash
+    _post = Map<String, dynamic>.from(widget.post ?? {});
+
+    _post['author'] = _post['author'] ?? 'Nguyễn Chiến';
+    _post['avatar'] = _post['avatar'] ?? 'asset/images/anh-mo-ta.jpg';
+    _post['visibility'] = _post['visibility'] ?? 0;
+    _post['timestamp'] =
+        _post['timestamp'] ??
+        DateTime.now().subtract(const Duration(minutes: 2));
+    // support both 'content' and 'text'
+    _post['text'] =
+        _post['content'] ??
+        _post['text'] ??
+        'Hôm nay mình đã khám phá một nơi rất đẹp — khung cảnh tuyệt vời và đồ ăn ngon. Mọi người nên thử khi có dịp!';
+    _post['image'] = _post['image'] ?? 'asset/images/anh-mo-ta.jpg';
+    _post['likes'] = _post['likes'] ?? 0;
+    _post['comments'] = _post['comments'] ?? 0;
+    _post['shares'] = _post['shares'] ?? 0;
 
     _comments = [
       {'author': 'Chiến', 'text': 'Đẹp quá!', 'time': '1 Phút'},
@@ -41,6 +49,10 @@ class _BaivietState extends State<Baiviet> {
       },
       {'author': 'Vương', 'text': 'Chú chó đẹp quá', 'time': '5 Phút'},
     ];
+
+    // related posts (empty list if none provided)
+    _relatedPosts = List<Map<String, dynamic>>.from(widget.relatedPosts ?? []);
+
     _liked = false;
   }
 
@@ -116,7 +128,7 @@ class _BaivietState extends State<Baiviet> {
                   Row(
                     children: [
                       Text(
-                        _formatTimestamp(_post['timestamp'] as DateTime),
+                        _formatTimestamp(_post['timestamp']),
                         style: const TextStyle(
                           fontSize: 12,
                           color: Colors.grey,
@@ -238,8 +250,81 @@ class _BaivietState extends State<Baiviet> {
                     ],
                   ),
                   const SizedBox(height: 16),
+                  // Optional sections
+                  if ((_post['experience'] as String?) != null) ...[
+                    const Text(
+                      'Kinh nghiệm',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(_post['experience'] as String),
+                    const SizedBox(height: 12),
+                  ],
+                  if ((_post['itinerary'] as String?) != null) ...[
+                    const Text(
+                      'Lịch trình',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(_post['itinerary'] as String),
+                    const SizedBox(height: 12),
+                  ],
+                  if ((_post['expenses'] as String?) != null) ...[
+                    const Text(
+                      'Chi tiêu',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(_post['expenses'] as String),
+                    const SizedBox(height: 12),
+                  ],
                   const Divider(),
                   const SizedBox(height: 8),
+                  if (_relatedPosts.isNotEmpty) ...[
+                    const Text(
+                      'Bài viết liên quan',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    ListView.separated(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: _relatedPosts.length,
+                      itemBuilder: (context, index) {
+                        final related = _relatedPosts[index];
+                        return CommunityPostCard(
+                          post: related,
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => Baiviet(
+                                  post: related,
+                                  relatedPosts: widget.relatedPosts,
+                                ),
+                              ),
+                            );
+                          },
+                        );
+                      },
+                      separatorBuilder: (_, __) => const SizedBox(height: 12),
+                    ),
+                    const SizedBox(height: 12),
+                    const Divider(),
+                    const SizedBox(height: 8),
+                  ],
                   const Text(
                     'Bình luận',
                     style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
@@ -374,7 +459,8 @@ class _BaivietState extends State<Baiviet> {
     );
   }
 
-  String _formatTimestamp(DateTime t) {
+  String _formatTimestamp(dynamic t) {
+    if (t == null || t is! DateTime) return '';
     final diff = DateTime.now().difference(t);
     if (diff.inMinutes < 1) return 'Vừa xong';
     if (diff.inMinutes < 60) return '${diff.inMinutes} Phút';

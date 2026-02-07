@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:tourn/Ui/main/category/menu/widgets/Settings/Security.dart';
 import 'package:tourn/Ui/main/category/menu/widgets/Settings/Security/two_factor_page.dart';
 import 'package:tourn/Ui/main/category/menu/widgets/Settings/account_management.dart';
-import 'package:tourn/Ui/main/category/menu/widgets/Settings/accountmanagement/widgets/account_service.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -224,40 +223,17 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
 
           const SizedBox(height: 8),
-
-          // Security block (change password / 2FA / saved logins)
-          Card(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Column(
-              children: [
-                ListTile(
-                  title: const Text('Đổi mật khẩu'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () {},
-                ),
-                const Divider(height: 1),
-                ListTile(
-                  title: const Text('Xác thực 2 yếu tố'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const TwoFactorPage()),
-                  ),
-                ),
-                const Divider(height: 1),
-                ListTile(
-                  title: const Text('Thông tin đăng nhập đã lưu'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () {},
-                ),
-              ],
-            ),
+          _tile(
+            icon: Icons.vpn_key_outlined,
+            title: 'Thông tin đăng nhập đã lưu',
+            onTap: () {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Thông tin đăng nhập đã lưu')),
+              );
+            },
           ),
 
           const SizedBox(height: 8),
-
-          // Support & about
           _sectionHeader('Tuỳ chọn và Hỗ trợ'),
           _tile(
             icon: Icons.dark_mode_outlined,

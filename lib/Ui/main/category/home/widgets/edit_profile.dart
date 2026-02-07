@@ -172,13 +172,15 @@ class _EditProfilePageState extends State<EditProfilePage> {
                 decoration: const InputDecoration(labelText: 'Email'),
                 keyboardType: TextInputType.emailAddress,
                 validator: (v) {
-                  if (v == null || v.trim().isEmpty)
+                  if (v == null || v.trim().isEmpty) {
                     return 'Vui lòng nhập email';
+                  }
                   final email = v.trim();
                   if (!RegExp(
                     r"^[\w\-.]+@[\w\-.]+\.[a-zA-Z]{2,}",
-                  ).hasMatch(email))
+                  ).hasMatch(email)) {
                     return 'Email không hợp lệ';
+                  }
                   return null;
                 },
               ),

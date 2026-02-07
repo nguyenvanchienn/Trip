@@ -43,10 +43,11 @@ class _TwoFactorPageState extends State<TwoFactorPage> {
   Future<void> _setEnabled(bool v) async {
     await TwoFactorService.setEnabled(v);
     setState(() => _enabled = v);
-    if (mounted)
+    if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(v ? 'Đã bật 2 yếu tố' : 'Đã tắt 2 yếu tố')),
       );
+    }
   }
 
   Future<void> _startSmsFlow() async {
@@ -143,10 +144,11 @@ class _TwoFactorPageState extends State<TwoFactorPage> {
       _phoneController.text = '';
       _secret = null;
     });
-    if (mounted)
+    if (mounted) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('2FA đã được tắt')));
+    }
   }
 
   @override

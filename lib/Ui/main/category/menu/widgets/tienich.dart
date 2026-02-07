@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
-import 'Menu_items/introduce_receive_money.dart';
-import 'Menu_items/my_store.dart';
-import 'Menu_items/qr_receive.dart';
-import 'Menu_items/open_nice_account.dart';
-import 'Menu_items/digi_trading.dart';
-import 'Menu_items/explore.dart';
-import 'Menu_items/smart_finance.dart';
-import 'Menu_items/installment.dart';
+import 'package:tourn/Ui/main/category/menu/widgets/Menu_items/Ghichu.dart';
+import 'package:tourn/Ui/main/category/menu/widgets/Menu_tienich/Thuequanaophukien.dart';
+import 'package:tourn/Ui/main/category/menu/widgets/Menu_tienich/phuongtiendichuyen.dart';
+import 'Menu_tienich/Datphongkhachsan.dart';
+import 'Menu_tienich/Thuehuongdanvien.dart';
+import 'Menu_tienich/Thuethochupanh.dart';
+import 'Menu_tienich/thanhtoanvachiase.dart';
+import 'Menu_tienich/khamphadiadiem.dart';
+import 'Menu_tienich/goiyhanhtrinh.dart';
 
 class Tienich extends StatelessWidget {
   const Tienich({super.key});
@@ -38,14 +39,14 @@ class Tienich extends StatelessWidget {
               spacing: spacing,
               runSpacing: runSpacing,
               children: [
-                SizedBox(width: itemWidth, child: IntroduceReceiveMoney()),
-                SizedBox(width: itemWidth, child: MyStore()),
-                SizedBox(width: itemWidth, child: QrReceive()),
-                SizedBox(width: itemWidth, child: OpenNiceAccount()),
-                SizedBox(width: itemWidth, child: DigiTrading()),
-                SizedBox(width: itemWidth, child: Explore()),
-                SizedBox(width: itemWidth, child: SmartFinance()),
-                SizedBox(width: itemWidth, child: Installment()),
+                SizedBox(width: itemWidth, child: PhuongTienDiChuyen()),
+                SizedBox(width: itemWidth, child: Datphongkhachsan()),
+                SizedBox(width: itemWidth, child: Thuehuongdanvien()),
+                SizedBox(width: itemWidth, child: Thuethochupanh()),
+                SizedBox(width: itemWidth, child: Thuequanaovaphukien()),
+                SizedBox(width: itemWidth, child: Thanhtoanvachiase()),
+                SizedBox(width: itemWidth, child: Khamphadiadiem()),
+                SizedBox(width: itemWidth, child: Goiyhanhtrinh()),
               ],
             );
           },
