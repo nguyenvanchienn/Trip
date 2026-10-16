@@ -1,7 +1,8 @@
-import 'dart:convert';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:tourn/data/firebase/firebase_menu_service.dart';
+import 'package:tourn/models/menu_models.dart';
 
 class GhiChuPage extends StatefulWidget {
   const GhiChuPage({super.key});
@@ -11,10 +12,11 @@ class GhiChuPage extends StatefulWidget {
 }
 
 class _GhiChuPageState extends State<GhiChuPage> {
-  final String _prefsKey = 'notes_v1';
-  List<Map<String, dynamic>> _notes = [];
-  List<Map<String, dynamic>> _filtered = [];
+  final FirebaseMenuService _menuService = FirebaseMenuService();
+  List<NoteModel> _notes = [];
+  List<NoteModel> _filtered = [];
   bool _loading = true;
+  StreamSubscription<List<NoteModel>>? _subscription;
 
   @override
   void initState() {
@@ -22,50 +24,45 @@ class _GhiChuPageState extends State<GhiChuPage> {
     _loadNotes();
   }
 
-  Future<void> _loadNotes() async {
+  @override
+  void dispose() {
+    _subscription?.cancel();
+    super.dispose();
+  }
+
+  void _loadNotes() {
     setState(() => _loading = true);
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_prefsKey);
-    if (raw != null) {
-      try {
-        final data = jsonDecode(raw) as List<dynamic>;
-        _notes = data.cast<Map<String, dynamic>>();
-      } catch (_) {
-        _notes = [];
-      }
-    } else {
-      _notes = [];
-    }
-    _filtered = List.from(_notes.reversed);
-    setState(() => _loading = false);
+    _subscription = _menuService.getNotesStream().listen((notes) {
+      _notes = notes;
+      _applyFilter(_lastQuery);
+      if (mounted) setState(() => _loading = false);
+    });
   }
 
-  Future<void> _saveNotes() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_prefsKey, jsonEncode(_notes));
-  }
-
-  Future<void> _addOrEditNote({Map<String, dynamic>? note}) async {
+  Future<void> _addOrEditNote({NoteModel? note}) async {
     final result = await Navigator.of(context).push<Map<String, dynamic>>(
       MaterialPageRoute(builder: (_) => NoteEditorPage(note: note)),
     );
 
     if (result != null) {
       if (note == null) {
-        // add
-        _notes.add(result);
+        // add new note
+        await _menuService.addNote(
+          title: result['title'] ?? '',
+          content: result['content'] ?? '',
+        );
       } else {
-        // replace by id
-        final idx = _notes.indexWhere((n) => n['id'] == note['id']);
-        if (idx >= 0) _notes[idx] = result;
+        // update existing note
+        final updatedNote = note.copyWith(
+          title: result['title'] ?? '',
+          content: result['content'] ?? '',
+        );
+        await _menuService.updateNote(updatedNote);
       }
-      await _saveNotes();
-      _applyFilter(_lastQuery);
-      setState(() {});
     }
   }
 
-  Future<void> _deleteNote(Map<String, dynamic> note) async {
+  Future<void> _deleteNote(NoteModel note) async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (c) => AlertDialog(
@@ -85,10 +82,7 @@ class _GhiChuPageState extends State<GhiChuPage> {
     );
 
     if (ok == true) {
-      _notes.removeWhere((n) => n['id'] == note['id']);
-      await _saveNotes();
-      _applyFilter(_lastQuery);
-      setState(() {});
+      await _menuService.deleteNote(note.id);
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
@@ -100,15 +94,15 @@ class _GhiChuPageState extends State<GhiChuPage> {
   void _applyFilter(String q) {
     _lastQuery = q;
     if (q.trim().isEmpty) {
-      _filtered = List.from(_notes.reversed);
+      _filtered = List.from(_notes);
     } else {
       final low = q.toLowerCase();
-      _filtered = _notes.reversed.where((n) {
-        return (n['title'] as String).toLowerCase().contains(low) ||
-            (n['content'] as String).toLowerCase().contains(low);
+      _filtered = _notes.where((n) {
+        return n.title.toLowerCase().contains(low) ||
+            n.content.toLowerCase().contains(low);
       }).toList();
     }
-    setState(() {});
+    if (mounted) setState(() {});
   }
 
   @override
@@ -158,7 +152,7 @@ class _GhiChuPageState extends State<GhiChuPage> {
               itemBuilder: (context, i) {
                 final item = _filtered[i];
                 return Dismissible(
-                  key: ValueKey(item['id']),
+                  key: ValueKey(item.id),
                   background: Container(
                     color: Colors.red,
                     alignment: Alignment.centerLeft,
@@ -169,15 +163,15 @@ class _GhiChuPageState extends State<GhiChuPage> {
                   onDismissed: (_) => _deleteNote(item),
                   child: Card(
                     child: ListTile(
-                      title: Text(item['title'] ?? 'Không tiêu đề'),
+                      title: Text(
+                        item.title.isEmpty ? 'Không tiêu đề' : item.title,
+                      ),
                       subtitle: Text(
-                        (item['content'] as String).split('\n').first,
+                        item.content.split('\n').first,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
-                      trailing: Text(
-                        _formatTime(item['updatedAt'] ?? item['createdAt']),
-                      ),
+                      trailing: Text(_formatTime(item.updatedAt)),
                       onTap: () => _addOrEditNote(note: item),
                       onLongPress: () => _deleteNote(item),
                     ),
@@ -188,20 +182,16 @@ class _GhiChuPageState extends State<GhiChuPage> {
     );
   }
 
-  String _formatTime(String iso) {
-    try {
-      final d = DateTime.parse(iso).toLocal();
-      return '${d.year}-${_two(d.month)}-${_two(d.day)} ${_two(d.hour)}:${_two(d.minute)}';
-    } catch (_) {
-      return '';
-    }
+  String _formatTime(DateTime dateTime) {
+    final d = dateTime.toLocal();
+    return '${d.year}-${_two(d.month)}-${_two(d.day)} ${_two(d.hour)}:${_two(d.minute)}';
   }
 
   String _two(int v) => v.toString().padLeft(2, '0');
 }
 
 class NoteEditorPage extends StatefulWidget {
-  final Map<String, dynamic>? note;
+  final NoteModel? note;
   const NoteEditorPage({super.key, this.note});
 
   @override
@@ -215,8 +205,8 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
   @override
   void initState() {
     super.initState();
-    _title = TextEditingController(text: widget.note?['title'] ?? '');
-    _content = TextEditingController(text: widget.note?['content'] ?? '');
+    _title = TextEditingController(text: widget.note?.title ?? '');
+    _content = TextEditingController(text: widget.note?.content ?? '');
   }
 
   @override
@@ -227,16 +217,11 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
   }
 
   void _save() {
-    final now = DateTime.now().toUtc();
-    final id = widget.note?['id'] ?? now.microsecondsSinceEpoch.toString();
     final note = {
-      'id': id,
       'title': _title.text.trim().isEmpty
           ? 'Không tiêu đề'
           : _title.text.trim(),
       'content': _content.text,
-      'createdAt': widget.note?['createdAt'] ?? now.toIso8601String(),
-      'updatedAt': now.toIso8601String(),
     };
     Navigator.of(context).pop(note);
   }
@@ -273,7 +258,7 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
 }
 
 class _NoteSearchDelegate extends SearchDelegate<String> {
-  final List<Map<String, dynamic>> notes;
+  final List<NoteModel> notes;
   _NoteSearchDelegate(this.notes);
 
   @override
@@ -290,18 +275,18 @@ class _NoteSearchDelegate extends SearchDelegate<String> {
   @override
   Widget buildResults(BuildContext context) {
     final q = query.trim().toLowerCase();
-    final results = notes.reversed
+    final results = notes
         .where(
           (n) =>
-              (n['title'] as String).toLowerCase().contains(q) ||
-              (n['content'] as String).toLowerCase().contains(q),
+              n.title.toLowerCase().contains(q) ||
+              n.content.toLowerCase().contains(q),
         )
         .toList();
     return ListView.builder(
       itemCount: results.length,
       itemBuilder: (c, i) => ListTile(
-        title: Text(results[i]['title']),
-        subtitle: Text((results[i]['content'] as String).split('\n').first),
+        title: Text(results[i].title),
+        subtitle: Text(results[i].content.split('\n').first),
         onTap: () => close(context, query),
       ),
     );
@@ -311,21 +296,21 @@ class _NoteSearchDelegate extends SearchDelegate<String> {
   Widget buildSuggestions(BuildContext context) {
     final q = query.trim().toLowerCase();
     final suggestions = q.isEmpty
-        ? []
-        : notes.reversed
+        ? <NoteModel>[]
+        : notes
               .where(
                 (n) =>
-                    (n['title'] as String).toLowerCase().contains(q) ||
-                    (n['content'] as String).toLowerCase().contains(q),
+                    n.title.toLowerCase().contains(q) ||
+                    n.content.toLowerCase().contains(q),
               )
               .toList();
     return ListView.builder(
       itemCount: suggestions.length,
       itemBuilder: (c, i) => ListTile(
-        title: Text(suggestions[i]['title']),
-        subtitle: Text((suggestions[i]['content'] as String).split('\n').first),
+        title: Text(suggestions[i].title),
+        subtitle: Text(suggestions[i].content.split('\n').first),
         onTap: () {
-          query = suggestions[i]['title'];
+          query = suggestions[i].title;
           showResults(context);
         },
       ),

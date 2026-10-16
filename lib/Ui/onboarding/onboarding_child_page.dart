@@ -20,7 +20,6 @@ class onboardingchildpage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF121212),
       body: SafeArea(
         // SafeArea để tránh các khu vực không an toàn trên
         child: SingleChildScrollView(
@@ -56,7 +55,7 @@ class onboardingchildpage extends StatelessWidget {
           style: TextStyle(
             fontSize: 16,
             fontFamily: "lato",
-            color: Colors.white.withValues(
+            color: Colors.black.withValues(
               alpha: 0.44,
             ), // Màu trắng với độ mờ 44%
           ),
@@ -92,8 +91,8 @@ class onboardingchildpage extends StatelessWidget {
                   onboardingpageposition ==
                       OnboardingPagePosition
                           .page1 // Kiểm tra vị trí trang hiện tại
-                  ? Colors.white
-                  : Colors.white.withValues(alpha: 0.30),
+                  ? Colors.black
+                  : Colors.black.withValues(alpha: 0.30),
               borderRadius: BorderRadius.circular(56),
             ),
           ),
@@ -106,8 +105,8 @@ class onboardingchildpage extends StatelessWidget {
             width: 10,
             decoration: BoxDecoration(
               color: onboardingpageposition == OnboardingPagePosition.page2
-                  ? Colors.white
-                  : Colors.white.withValues(alpha: 0.30),
+                  ? Colors.black
+                  : Colors.black.withValues(alpha: 0.30),
               borderRadius: BorderRadius.circular(56),
             ),
           ),
@@ -120,8 +119,8 @@ class onboardingchildpage extends StatelessWidget {
             width: 10,
             decoration: BoxDecoration(
               color: onboardingpageposition == OnboardingPagePosition.page3
-                  ? Colors.white
-                  : Colors.white.withValues(alpha: 0.30),
+                  ? Colors.black
+                  : Colors.black.withValues(alpha: 0.30),
               borderRadius: BorderRadius.circular(56), // Bo góc cho chấm
             ),
           ),
@@ -141,7 +140,7 @@ class onboardingchildpage extends StatelessWidget {
             style: TextStyle(
               fontSize: 24,
               fontWeight: FontWeight.bold,
-              color: Colors.white,
+              color: Colors.black,
             ),
             textAlign: TextAlign.center, // Căn giữa văn bản
           ),
@@ -150,7 +149,7 @@ class onboardingchildpage extends StatelessWidget {
             onboardingpageposition.onboardingpagecontent(),
             style: TextStyle(
               fontSize: 16,
-              color: Colors.white54,
+              color: Colors.black.withValues(alpha: 0.54),
             ), // Màu trắng với độ mờ 54%
             textAlign: TextAlign.center, // Căn giữa văn bản
           ),
@@ -175,7 +174,7 @@ class onboardingchildpage extends StatelessWidget {
               style: TextStyle(
                 fontSize: 16,
                 fontFamily: "loto",
-                color: Colors.white.withValues(
+                color: Colors.black.withValues(
                   alpha: 0.44,
                 ), // Màu trắng với độ mờ 44%
               ),

@@ -1,17 +1,27 @@
 import 'package:flutter/material.dart';
+import 'package:tourn/ultils.enums/image_utils.dart';
 
 class CommunityHeader extends StatelessWidget {
   final VoidCallback onAddTap;
   final VoidCallback onProfileTap;
+  final String? userName;
+  final String? userPhotoUrl;
 
   const CommunityHeader({
     super.key,
     required this.onAddTap,
     required this.onProfileTap,
+    this.userName,
+    this.userPhotoUrl,
   });
 
   @override
   Widget build(BuildContext context) {
+    // Extract first name from full name
+    String displayName = userName ?? 'Bạn';
+    List<String> nameParts = displayName.split(' ');
+    String firstName = nameParts.isNotEmpty ? nameParts.last : displayName;
+
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Row(
@@ -33,9 +43,9 @@ class CommunityHeader extends StatelessWidget {
                       color: Color(0xFF113953),
                     ),
                   ),
-                  const Text(
-                    'Chiến',
-                    style: TextStyle(
+                  Text(
+                    firstName,
+                    style: const TextStyle(
                       fontSize: 22,
                       fontWeight: FontWeight.bold,
                       color: Color(0xFF113953),
@@ -45,7 +55,7 @@ class CommunityHeader extends StatelessWidget {
               ),
               const SizedBox(height: 4),
               Text(
-                'Chào mừng đến với TRIP',
+                'Chào mừng bạn đến với TRIP',
                 style: TextStyle(fontSize: 14, color: Colors.grey[600]),
               ),
             ],
@@ -83,12 +93,25 @@ class CommunityHeader extends StatelessWidget {
                     ),
                   ),
                   child: ClipOval(
-                    child: Image.asset(
-                      'asset/images/employee-5.png',
-                      width: 48,
-                      height: 48,
-                      fit: BoxFit.cover,
-                    ),
+                    child: userPhotoUrl != null && userPhotoUrl!.isNotEmpty
+                        ? SmartImage(
+                            imageUrl: userPhotoUrl,
+                            width: 48,
+                            height: 48,
+                            fit: BoxFit.cover,
+                            errorWidget: Image.asset(
+                              'asset/images/OIP.jpg',
+                              width: 48,
+                              height: 48,
+                              fit: BoxFit.cover,
+                            ),
+                          )
+                        : Image.asset(
+                            'asset/images/OIP.jpg',
+                            width: 48,
+                            height: 48,
+                            fit: BoxFit.cover,
+                          ),
                   ),
                 ),
               ),

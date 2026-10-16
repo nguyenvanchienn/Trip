@@ -43,3 +43,12 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Temporary & scratch files
+*.txt
+*.log
+old_datvexekhach.dart
+regex_test.dart
+test_calendar.dart
+xekhach.dart
+lib/test_script.dart

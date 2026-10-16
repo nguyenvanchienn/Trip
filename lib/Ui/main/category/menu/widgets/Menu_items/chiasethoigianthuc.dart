@@ -3,9 +3,11 @@ import 'menu_item.dart';
 import 'widgets/chiasethoigianthuc_page.dart';
 
 class Chiasethoigianthuc extends StatelessWidget {
-  const Chiasethoigianthuc({super.key, this.onTap});
+  /// If [sessionId] is supplied the pushed page will act as a viewer.
+  const Chiasethoigianthuc({super.key, this.onTap, this.sessionId});
 
   final VoidCallback? onTap;
+  final String? sessionId;
 
   @override
   Widget build(BuildContext context) {
@@ -14,7 +16,9 @@ class Chiasethoigianthuc extends StatelessWidget {
           onTap ??
           () {
             Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const ChiaSeThoiGianThucPage()),
+              MaterialPageRoute(
+                builder: (_) => ChiaSeThoiGianThucPage(sessionId: sessionId),
+              ),
             );
           },
       icon: const Icon(

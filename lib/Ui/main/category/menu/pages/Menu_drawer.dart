@@ -1,127 +1,174 @@
 import 'package:flutter/material.dart';
 import 'package:easy_localization/easy_localization.dart';
-import 'package:tourn/Ui/main/category/home/widgets/Profile.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:tourn/Ui/main/category/home/widgets/profile/Profile.dart';
 import 'package:tourn/Ui/main/category/menu/pages/settings_page.dart';
 import 'package:tourn/Ui/main/category/menu/widgets/Confirm.dart';
 import 'package:tourn/Ui/main/category/menu/pages/Help.dart';
 import 'package:tourn/Ui/main/category/menu/widgets/language.dart';
+import 'package:tourn/Ui/main/category/business/business_account_action.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:tourn/ultils.enums/image_utils.dart';
+import 'package:tourn/domain/user_repository/user_repository.dart';
 
 class MenuDrawer extends StatelessWidget {
   const MenuDrawer({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: 320,
-      child: Drawer(
-        child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                InkWell(
-                  onTap: () {
-                    // Đóng drawer rồi điều hướng đến route '/profile'
-                    Navigator.of(context).pop();
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const profile()),
-                    );
-                  },
-                  child: Row(
-                    children: [
-                      CircleAvatar(
-                        radius: 28,
-                        backgroundImage: const AssetImage(
-                          'asset/images/employee-5.png',
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
+    final userRepo = context.read<UserRepository>();
+
+    return StreamBuilder(
+      stream: userRepo.streamCurrentUser(),
+      builder: (context, snapshot) {
+        final user = snapshot.data;
+        final displayName =
+            user?.displayName ??
+            FirebaseAuth.instance.currentUser?.displayName ??
+            'Người dùng';
+        final photoUrl = user?.photoUrl;
+
+        return SizedBox(
+          width: 320,
+          child: Drawer(
+            child: SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: SingleChildScrollView(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text(
-                              'Nguyễn Chiến',
-                              style: TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            const SizedBox(height: 6),
                             InkWell(
                               onTap: () {
+                                // Đóng drawer rồi điều hướng đến route '/profile'
                                 Navigator.of(context).pop();
                                 Navigator.push(
                                   context,
                                   MaterialPageRoute(
-                                    builder: (_) => const profile(),
+                                    builder: (_) => const Profile(
+                                      showBottomNav: true,
+                                      initialTab: 4,
+                                    ),
                                   ),
                                 );
                               },
-                              child: Row(children: [
+                              child: Row(
+                                children: [
+                                  CircleAvatar(
+                                    radius: 28,
+                                    backgroundImage:
+                                        photoUrl != null && photoUrl.isNotEmpty
+                                        ? getImageProvider(photoUrl)
+                                        : const AssetImage(
+                                                'asset/images/OIP.jpg',
+                                              )
+                                              as ImageProvider,
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          displayName,
+                                          style: const TextStyle(
+                                            fontSize: 20,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 6),
+                                        InkWell(
+                                          onTap: () {
+                                            Navigator.of(context).pop();
+                                            Navigator.push(
+                                              context,
+                                              MaterialPageRoute(
+                                                builder: (_) => const Profile(
+                                                  showBottomNav: true,
+                                                  initialTab: 4,
+                                                ),
+                                              ),
+                                            );
+                                          },
+                                          child: Row(children: []),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  BusinessAccountAction(
+                                    asAvatar: true,
+                                    onTap: () {
+                                      Navigator.of(context).pop();
+                                    },
+                                  ),
                                 ],
                               ),
+                            ),
+
+                            const SizedBox(height: 12),
+                            const Divider(),
+
+                            // Menu list
+                            _buildMenuItem(
+                              context,
+                              icon: Icons.help_outline,
+                              label: 'Trợ giúp và hỗ trợ',
+                            ),
+                            _buildMenuItem(
+                              context,
+                              icon: Icons.settings,
+                              label: 'Cài đặt và quyền riêng tư',
                             ),
                           ],
                         ),
                       ),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 12),
-                const Divider(),
-
-                // Menu list
-                _buildMenuItem(
-                  context,
-                  icon: Icons.help_outline,
-                  label: 'Trợ giúp và hỗ trợ',
-                ),
-                _buildMenuItem(
-                  context,
-                  icon: Icons.settings,
-                  label: 'Cài đặt và quyền riêng tư',
-                ),
-
-                const Spacer(),
-
-                buildlanguage(context),
-                _buildSignOutButton(context),
-
-                const SizedBox(height: 8),
-
-                // Footer: version + update
-                Row(
-                  children: [
-                    const Text(
-                      'Trip@v28.5.61 (5)',
-                      style: TextStyle(color: Colors.grey),
                     ),
-                    const Spacer(),
-                    ElevatedButton(
-                      onPressed: () {},
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.deepOrange,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(20),
+                    const SizedBox(height: 8),
+                    buildlanguage(context),
+                    _buildSignOutButton(context),
+                    const SizedBox(height: 8),
+                    // Footer: version + update
+                    Row(
+                      children: [
+                        const Text(
+                          'Trip@v28.5.61 (5)',
+                          style: TextStyle(color: Colors.grey),
                         ),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 18,
-                          vertical: 8,
+                        const Spacer(),
+                        ElevatedButton(
+                          onPressed: () {},
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.deepOrange,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 18,
+                              vertical: 8,
+                            ),
+                          ),
+                          child: const Text('Cập nhật'),
                         ),
-                      ),
-                      child: const Text('Cập nhật'),
+                      ],
                     ),
+                    const SizedBox(height: 16),
                   ],
                 ),
-              ],
+              ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -173,7 +220,10 @@ class MenuDrawer extends StatelessWidget {
       child: SizedBox(
         width: double.infinity,
         child: _PressableElevated(
-          onPressed: () => confirm(context),
+          onPressed: () {
+            Navigator.of(context).pop();
+            confirm(context);
+          },
           color: const Color(0xFF6200EE),
           child: Text(
             "signout_buttom".tr(),
@@ -192,6 +242,7 @@ class MenuDrawer extends StatelessWidget {
 Widget buildlanguage(BuildContext context) {
   return InkWell(
     onTap: () {
+      Navigator.of(context).pop();
       language(context);
     },
     borderRadius: BorderRadius.circular(30),
@@ -266,16 +317,16 @@ class _PressableElevated extends StatefulWidget {
 }
 
 class _PressableElevatedState extends State<_PressableElevated> {
-  bool _pressed = false;
-  final GlobalKey _innerKey =
+  bool pressed = false;
+  final GlobalKey innerKey =
       GlobalKey(); // key để kiểm tra điểm nhấn nằm trong vùng hiển thị nút
 
-  void _setPressed(bool v) =>
-      setState(() => _pressed = v); // Cập nhật trạng thái nhấn
+  void setPressed(bool v) =>
+      setState(() => pressed = v); // Cập nhật trạng thái nhấn
 
   // Kiểm tra xem global position có nằm trong bounds của inner container không
-  bool _isInsideInner(Offset globalPosition) {
-    final ctx = _innerKey.currentContext;
+  bool isInsideInner(Offset globalPosition) {
+    final ctx = innerKey.currentContext;
     if (ctx == null) return false;
     final box = ctx.findRenderObject() as RenderBox;
     final local = box.globalToLocal(globalPosition);
@@ -288,12 +339,12 @@ class _PressableElevatedState extends State<_PressableElevated> {
   @override
   Widget build(BuildContext context) {
     // Xây dựng widget với hiệu ứng nhấn
-    final double scale = _pressed ? 0.98 : 1.0; // Giảm kích thước khi nhấn
+    final double scale = pressed ? 0.98 : 1.0; // Giảm kích thước khi nhấn
     final Color bgColor = Color.lerp(
       // màu nền nhạt hơn khi nhấn
       widget.color,
       Colors.white,
-      _pressed ? 0.12 : 0.0, // điều chỉnh hệ số nhạt màu khi nhấn (nhẹ hơn)
+      pressed ? 0.12 : 0.0, // điều chỉnh hệ số nhạt màu khi nhấn (nhẹ hơn)
     )!;
 
     return AnimatedScale(
@@ -311,16 +362,16 @@ class _PressableElevatedState extends State<_PressableElevated> {
         child: GestureDetector(
           behavior: HitTestBehavior.translucent,
           onTapDown: (details) {
-            if (_isInsideInner(details.globalPosition)) _setPressed(true);
+            if (isInsideInner(details.globalPosition)) setPressed(true);
           },
           onTapUp: (details) {
-            final wasInside = _isInsideInner(details.globalPosition);
-            _setPressed(false); // kết thúc nhấn
+            final wasInside = isInsideInner(details.globalPosition);
+            setPressed(false); // kết thúc nhấn
             if (wasInside) widget.onPressed();
           },
-          onTapCancel: () => _setPressed(false), // hủy nhấn
+          onTapCancel: () => setPressed(false), // hủy nhấn
           child: AnimatedContainer(
-            key: _innerKey,
+            key: innerKey,
             duration: const Duration(milliseconds: 110), // thời gian chuyển màu
             curve: Curves.easeOut, // Hiệu ứng chuyển màu
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -329,9 +380,9 @@ class _PressableElevatedState extends State<_PressableElevated> {
               borderRadius: BorderRadius.circular(12),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(_pressed ? 0.10 : 0.16),
-                  blurRadius: _pressed ? 2 : 5,
-                  offset: Offset(0, _pressed ? 1 : 2),
+                  color: Colors.black.withOpacity(pressed ? 0.10 : 0.16),
+                  blurRadius: pressed ? 2 : 5,
+                  offset: Offset(0, pressed ? 1 : 2),
                 ),
               ],
             ),

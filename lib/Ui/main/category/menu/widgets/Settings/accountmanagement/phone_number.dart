@@ -1,18 +1,55 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
-/// Service cho danh sách số điện thoại
+/// Service cho danh sách số điện thoại (Firebase)
 class PhoneListService {
-  static const _key = 'account_phones';
+  static final _firestore = FirebaseFirestore.instance;
+  static final _auth = FirebaseAuth.instance;
+
+  static String? get _uid => _auth.currentUser?.uid;
 
   static Future<List<String>> getPhones() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getStringList(_key) ?? <String>[];
+    final uid = _uid;
+    if (uid == null) return [];
+
+    try {
+      final doc = await _firestore.collection('users').doc(uid).get();
+      final data = doc.data();
+      if (data == null) return [];
+
+      // Get main phone and additional phones
+      final List<String> phones = [];
+      if (data['phone'] != null && (data['phone'] as String).isNotEmpty) {
+        phones.add(data['phone']);
+      }
+
+      final additionalPhones = data['additionalPhones'] as List<dynamic>?;
+      if (additionalPhones != null) {
+        phones.addAll(additionalPhones.cast<String>());
+      }
+
+      return phones;
+    } catch (e) {
+      return [];
+    }
   }
 
   static Future<void> setPhones(List<String> list) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList(_key, list);
+    final uid = _uid;
+    if (uid == null) return;
+
+    try {
+      final mainPhone = list.isNotEmpty ? list.first : '';
+      final additionalPhones = list.length > 1 ? list.sublist(1) : <String>[];
+
+      await _firestore.collection('users').doc(uid).update({
+        'phone': mainPhone,
+        'additionalPhones': additionalPhones,
+      });
+    } catch (e) {
+      // Handle error
+    }
   }
 
   static Future<void> addPhone(String phone) async {
@@ -200,27 +237,50 @@ class _PhoneListPageState extends State<PhoneListPage> {
                                 title: Text('Chưa có số điện thoại nào'),
                               ),
                             ]
-                          : _phones
-                                .asMap()
-                                .entries
-                                .map(
-                                  (e) => Column(
-                                    children: [
-                                      ListTile(
-                                        leading: const Icon(
-                                          Icons.phone_android_outlined,
-                                        ),
-                                        title: Text(e.value),
-                                        trailing: const Icon(
-                                          Icons.chevron_right,
-                                        ),
-                                        onTap: () => _editPhone(e.key),
-                                      ),
-                                      const Divider(height: 1),
-                                    ],
+                          : _phones.asMap().entries.map((e) {
+                              final isPrimary = e.key == 0;
+                              return Column(
+                                children: [
+                                  ListTile(
+                                    leading: const Icon(
+                                      Icons.phone_android_outlined,
+                                    ),
+                                    title: Row(
+                                      children: [
+                                        Expanded(child: Text(e.value)),
+                                        if (isPrimary)
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                              vertical: 2,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: Colors.green.withOpacity(
+                                                0.1,
+                                              ),
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                            ),
+                                            child: const Text(
+                                              'Chính',
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color: Colors.green,
+                                              ),
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                    trailing: const Icon(Icons.chevron_right),
+                                    onTap: () => _editPhone(e.key),
+                                    onLongPress: isPrimary
+                                        ? null
+                                        : () => _removePhone(e.key),
                                   ),
-                                )
-                                .toList(),
+                                  const Divider(height: 1),
+                                ],
+                              );
+                            }).toList(),
                     ),
                   ),
                 ),

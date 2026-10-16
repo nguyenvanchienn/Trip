@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:tourn/Ui/main/main_page.dart';
 import 'package:tourn/Ui/domain/domain_data_sources/firebase_auth_sevice.dart';
 import 'package:tourn/Ui/domain/domain_authentication_repository/authentication_repository.dart';
+import 'package:tourn/Ui/splash/splash.dart';
 
 /// Trang xác thực OTP
 /// Sử dụng cho cả xác thực số điện thoại khi đăng nhập và đăng ký
@@ -124,7 +125,7 @@ class _OTPVerificationPageState extends State<OTPVerificationPage> {
           // Nếu là đăng nhập, chuyển đến trang chính
           Navigator.pushAndRemoveUntil(
             context,
-            MaterialPageRoute(builder: (context) => const Mainpage()),
+            MaterialPageRoute(builder: (context) => const SplashScreen()),
             (route) => false,
           );
         }

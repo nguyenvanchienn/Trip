@@ -81,6 +81,18 @@ class CommunityTabChips extends StatelessWidget {
                         size: 16,
                         color: isSelected ? Colors.white : Colors.grey[600],
                       ),
+                    if (index == 5)
+                      Icon(
+                        Icons.lightbulb_outline,
+                        size: 16,
+                        color: isSelected ? Colors.white : Colors.grey[600],
+                      ),
+                    if (index == 6)
+                      Icon(
+                        Icons.more_horiz,
+                        size: 16,
+                        color: isSelected ? Colors.white : Colors.grey[600],
+                      ),
                     const SizedBox(width: 6),
                     Text(
                       tabs[index],

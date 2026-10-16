@@ -1,8 +1,9 @@
-import 'dart:convert';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:tourn/data/firebase/firebase_menu_service.dart';
+import 'package:tourn/models/menu_models.dart';
 
 class ThousandsSeparatorInputFormatter extends TextInputFormatter {
   final String separator;
@@ -49,10 +50,13 @@ class TaiChinhThongMinhPage extends StatefulWidget {
 }
 
 class _TaiChinhThongMinhPageState extends State<TaiChinhThongMinhPage> {
-  final String _key = 'expenses_v1';
-  List<Map<String, dynamic>> _expenses = [];
-  List<Map<String, dynamic>> _filtered = [];
-  String _filter = 'All'; // Lọc: Tất cả, Hôm nay, Tuần, Tháng
+  final FirebaseMenuService _menuService = FirebaseMenuService();
+  List<ExpenseModel> _expenses = [];
+  List<ExpenseModel> _filtered = [];
+  String _filter = 'Tất cả'; // Lọc: Tất cả, Hôm nay, Tuần, Tháng
+  StreamSubscription<List<ExpenseModel>>? _subscription;
+  bool _loading = true;
+  String? _error;
 
   @override
   void initState() {
@@ -60,68 +64,65 @@ class _TaiChinhThongMinhPageState extends State<TaiChinhThongMinhPage> {
     _load();
   }
 
-  Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getStringList(_key) ?? [];
-    _expenses = raw
-        .map((s) {
-          try {
-            final decoded = jsonDecode(s);
-            if (decoded is Map<String, dynamic>) return decoded;
-            if (decoded is Map) return Map<String, dynamic>.from(decoded);
-            return <String, dynamic>{};
-          } catch (_) {
-            return <String, dynamic>{};
-          }
-        })
-        .where((m) => m.isNotEmpty)
-        .toList();
-    _applyFilter();
-    setState(() {});
+  @override
+  void dispose() {
+    _subscription?.cancel();
+    super.dispose();
   }
 
-  Future<void> _save() async {
-    final prefs = await SharedPreferences.getInstance();
-    final raw = _expenses.map((e) => jsonEncode(e)).toList();
-    await prefs.setStringList(_key, raw);
+  void _load() {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    _subscription = _menuService.getExpensesStream().listen(
+      (expenses) {
+        _expenses = expenses;
+        _applyFilter();
+        if (mounted) setState(() => _loading = false);
+      },
+      onError: (error) {
+        debugPrint('Error loading expenses: $error');
+        if (mounted) {
+          setState(() {
+            _loading = false;
+            _error = 'Không thể tải dữ liệu. Vui lòng thử lại.';
+          });
+        }
+      },
+    );
   }
 
   void _applyFilter([String? filter]) {
     if (filter != null) _filter = filter;
     final now = DateTime.now();
     DateTime start;
-    if (_filter == 'Today') {
+    if (_filter == 'Hôm nay') {
       start = DateTime(now.year, now.month, now.day);
-    } else if (_filter == 'Week') {
+    } else if (_filter == 'Tuần') {
       start = now.subtract(Duration(days: now.weekday - 1));
       start = DateTime(start.year, start.month, start.day);
-    } else if (_filter == 'Month') {
+    } else if (_filter == 'Tháng') {
       start = DateTime(now.year, now.month, 1);
     } else {
       start = DateTime.fromMillisecondsSinceEpoch(0);
     }
 
-    _filtered = _expenses.reversed.where((e) {
-      final d =
-          DateTime.tryParse(e['date'] ?? '') ??
-          DateTime.fromMillisecondsSinceEpoch(0);
-      return d.isAfter(start) || _filter == 'All';
+    _filtered = _expenses.where((e) {
+      return e.date.isAfter(start) || _filter == 'Tất cả';
     }).toList();
-    setState(() {});
+    if (mounted) setState(() {});
   }
 
   double _totalAmount() {
-    return _filtered.fold(
-      0.0,
-      (prev, e) => prev + (e['amount'] as num? ?? 0).toDouble(),
-    );
+    return _filtered.fold(0.0, (prev, e) => prev + e.amount);
   }
 
   Map<String, double> _categoryTotals() {
     final map = <String, double>{};
     for (final e in _filtered) {
-      final cat = (e['category'] ?? 'Other').toString();
-      map[cat] = (map[cat] ?? 0) + ((e['amount'] as num?)?.toDouble() ?? 0);
+      final cat = e.category.isEmpty ? 'Khác' : e.category;
+      map[cat] = (map[cat] ?? 0) + e.amount;
     }
     return map;
   }
@@ -132,15 +133,23 @@ class _TaiChinhThongMinhPageState extends State<TaiChinhThongMinhPage> {
         .replaceAllMapped(RegExp(r"\B(?=(\d{3})+(?!\d))"), (m) => '.');
   }
 
+  String _formatDate(DateTime date) {
+    return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
+  }
+
   Future<void> _addExpense() async {
     final res = await showDialog<Map<String, dynamic>>(
       context: context,
-      builder: (c) => _ExpenseDialog(),
+      builder: (c) => const _ExpenseDialog(),
     );
     if (res != null) {
-      _expenses.add(res);
-      await _save();
-      _applyFilter();
+      await _menuService.addExpense(
+        amount: (res['amount'] as num?)?.toDouble() ?? 0,
+        category: res['category'] ?? 'Khác',
+        note: res['title'] ?? '',
+        date: DateTime.tryParse(res['date'] ?? '') ?? DateTime.now(),
+      );
+      if (!mounted) return;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Đã thêm chi tiêu')));
@@ -167,9 +176,8 @@ class _TaiChinhThongMinhPageState extends State<TaiChinhThongMinhPage> {
     );
 
     if (ok == true) {
-      _expenses.removeWhere((e) => e['id'] == id);
-      await _save();
-      _applyFilter();
+      await _menuService.deleteExpense(id);
+      if (!mounted) return;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Đã xóa')));
@@ -189,10 +197,10 @@ class _TaiChinhThongMinhPageState extends State<TaiChinhThongMinhPage> {
             dropdownColor: Theme.of(context).appBarTheme.backgroundColor,
             onChanged: (v) => _applyFilter(v),
             items: [
-              'All',
-              'Today',
-              'Week',
-              'Month',
+              'Tất cả',
+              'Hôm nay',
+              'Tuần',
+              'Tháng',
             ].map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
           ),
           const SizedBox(width: 8),
@@ -202,129 +210,149 @@ class _TaiChinhThongMinhPageState extends State<TaiChinhThongMinhPage> {
         onPressed: _addExpense,
         child: const Icon(Icons.add),
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(12.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(12.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Tổng: ${_fmt(_totalAmount())} VNĐ',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 18,
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : _error != null
+          ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.error_outline, size: 48, color: Colors.red),
+                  const SizedBox(height: 16),
+                  Text(_error!, textAlign: TextAlign.center),
+                  const SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: _load,
+                    child: const Text('Thử lại'),
+                  ),
+                ],
+              ),
+            )
+          : Padding(
+              padding: const EdgeInsets.all(12.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(12.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Tổng: ${_fmt(_totalAmount())} VNĐ',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 18,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          // Biểu đồ donut + chú thích
+                          Row(
+                            children: [
+                              // Biểu đồ donut
+                              SizedBox(
+                                width: 160,
+                                height: 160,
+                                child: DonutChart(data: totals),
+                              ),
+                              const SizedBox(width: 12),
+                              // Chú thích và phân tích
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: totals.entries
+                                      .toList()
+                                      .asMap()
+                                      .entries
+                                      .map((kv) {
+                                        final i = kv.key;
+                                        final e = kv.value;
+                                        final total = _totalAmount();
+                                        final val = e.value;
+                                        final pct = total > 0
+                                            ? (val / total * 100)
+                                            : 0.0;
+                                        return Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                            vertical: 6,
+                                          ),
+                                          child: Row(
+                                            children: [
+                                              Container(
+                                                width: 12,
+                                                height: 12,
+                                                decoration: BoxDecoration(
+                                                  color:
+                                                      DonutChart.colorForIndex(
+                                                        i,
+                                                      ),
+                                                  borderRadius:
+                                                      BorderRadius.circular(3),
+                                                ),
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Expanded(child: Text(e.key)),
+                                              Text(
+                                                '${pct.toStringAsFixed(0)}%',
+                                              ),
+                                              const SizedBox(width: 12),
+                                              Text('${_fmt(val)} VNĐ'),
+                                            ],
+                                          ),
+                                        );
+                                      })
+                                      .toList(),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    // Biểu đồ donut + chú thích
-                    Row(
-                      children: [
-                        // Biểu đồ donut
-                        SizedBox(
-                          width: 160,
-                          height: 160,
-                          child: DonutChart(data: totals),
-                        ),
-                        const SizedBox(width: 12),
-                        // Chú thích và phân tích
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: totals.entries
-                                .toList()
-                                .asMap()
-                                .entries
-                                .map((kv) {
-                                  final i = kv.key;
-                                  final e = kv.value;
-                                  final total = _totalAmount();
-                                  final val = e.value;
-                                  final pct = total > 0
-                                      ? (val / total * 100)
-                                      : 0.0;
-                                  return Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      vertical: 6,
+                  ),
+                  const SizedBox(height: 12),
+                  Expanded(
+                    child: _filtered.isEmpty
+                        ? const Center(child: Text('Không có chi tiêu'))
+                        : ListView.separated(
+                            itemCount: _filtered.length,
+                            separatorBuilder: (_, __) =>
+                                const SizedBox(height: 8),
+                            itemBuilder: (context, i) {
+                              final e = _filtered[i];
+                              return Dismissible(
+                                key: ValueKey(e.id),
+                                background: Container(
+                                  color: Colors.red,
+                                  alignment: Alignment.centerLeft,
+                                  padding: const EdgeInsets.only(left: 16),
+                                  child: const Icon(
+                                    Icons.delete,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                direction: DismissDirection.startToEnd,
+                                onDismissed: (_) => _deleteExpense(e.id),
+                                child: Card(
+                                  child: ListTile(
+                                    title: Text(
+                                      e.note.isEmpty ? 'Chi tiêu' : e.note,
                                     ),
-                                    child: Row(
-                                      children: [
-                                        Container(
-                                          width: 12,
-                                          height: 12,
-                                          decoration: BoxDecoration(
-                                            color: DonutChart.colorForIndex(i),
-                                            borderRadius: BorderRadius.circular(
-                                              3,
-                                            ),
-                                          ),
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Expanded(child: Text(e.key)),
-                                        Text('${pct.toStringAsFixed(0)}%'),
-                                        const SizedBox(width: 12),
-                                        Text('${_fmt(val)} VNĐ'),
-                                      ],
+                                    subtitle: Text(
+                                      '${e.category} • ${_formatDate(e.date)}',
                                     ),
-                                  );
-                                })
-                                .toList(),
+                                    trailing: Text('${_fmt(e.amount)} VNĐ'),
+                                    onTap: () {},
+                                  ),
+                                ),
+                              );
+                            },
                           ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 12),
-            Expanded(
-              child: _filtered.isEmpty
-                  ? const Center(child: Text('Không có chi tiêu'))
-                  : ListView.separated(
-                      itemCount: _filtered.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 8),
-                      itemBuilder: (context, i) {
-                        final e = _filtered[i];
-                        final d =
-                            DateTime.tryParse(e['date'] ?? '') ??
-                            DateTime.now();
-                        return Dismissible(
-                          key: ValueKey(e['id']),
-                          background: Container(
-                            color: Colors.red,
-                            alignment: Alignment.centerLeft,
-                            padding: const EdgeInsets.only(left: 16),
-                            child: const Icon(
-                              Icons.delete,
-                              color: Colors.white,
-                            ),
-                          ),
-                          direction: DismissDirection.startToEnd,
-                          onDismissed: (_) => _deleteExpense(e['id']),
-                          child: Card(
-                            child: ListTile(
-                              title: Text(e['title'] ?? ''),
-                              subtitle: Text(
-                                '${e['category'] ?? ''} • ${d.toLocal()}',
-                              ),
-                              trailing: Text(
-                                '${_fmt((e['amount'] as num?) ?? 0)} VNĐ',
-                              ),
-                              onTap: () {},
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }
@@ -339,7 +367,7 @@ class _ExpenseDialog extends StatefulWidget {
 class _ExpenseDialogState extends State<_ExpenseDialog> {
   final _title = TextEditingController();
   final _amount = TextEditingController();
-  String _category = 'Food';
+  String _category = 'Ăn uống';
   DateTime _date = DateTime.now();
 
   Future<void> _pickDate() async {
@@ -390,10 +418,12 @@ class _ExpenseDialogState extends State<_ExpenseDialog> {
           DropdownButton<String>(
             value: _category,
             items: [
-              'Food',
-              'Transport',
-              'Accomodation',
-              'Other',
+              'Ăn uống',
+              'Di chuyển',
+              'Chỗ ở',
+              'Giải trí',
+              'Mua sắm',
+              'Khác',
             ].map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
             onChanged: (v) => setState(() => _category = v ?? _category),
           ),

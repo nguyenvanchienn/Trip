@@ -1,7 +1,8 @@
-import 'dart:convert';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:tourn/data/firebase/firebase_menu_service.dart';
+import 'package:tourn/models/menu_models.dart';
 
 class HotelBookingHistoryPage extends StatefulWidget {
   const HotelBookingHistoryPage({super.key});
@@ -12,8 +13,10 @@ class HotelBookingHistoryPage extends StatefulWidget {
 }
 
 class _HotelBookingHistoryPageState extends State<HotelBookingHistoryPage> {
-  final String _key = 'hotel_booking_history_v1';
-  List<Map<String, dynamic>> _history = [];
+  final FirebaseMenuService _menuService = FirebaseMenuService();
+  List<BookingModel> _history = [];
+  StreamSubscription<List<BookingModel>>? _subscription;
+  bool _loading = true;
 
   @override
   void initState() {
@@ -21,37 +24,47 @@ class _HotelBookingHistoryPageState extends State<HotelBookingHistoryPage> {
     _load();
   }
 
-  Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getStringList(_key) ?? [];
-    setState(() {
-      _history = raw.map((s) => jsonDecode(s) as Map<String, dynamic>).toList();
+  @override
+  void dispose() {
+    _subscription?.cancel();
+    super.dispose();
+  }
+
+  void _load() {
+    _subscription = _menuService.getBookingsStream(type: 'hotel').listen((
+      bookings,
+    ) {
+      _history = bookings;
+      if (mounted) setState(() => _loading = false);
     });
   }
 
-  Future<void> _removeAt(int i) async {
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getStringList(_key) ?? [];
-    final removed = raw.removeAt(i);
-    await prefs.setStringList(_key, raw);
-    await _load();
-
-    // show undo
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Text('Đã xóa'),
-        action: SnackBarAction(
-          label: 'Hoàn tác',
-          onPressed: () async {
-            final prefs2 = await SharedPreferences.getInstance();
-            final raw2 = prefs2.getStringList(_key) ?? [];
-            raw2.insert(i, removed);
-            await prefs2.setStringList(_key, raw2);
-            await _load();
-          },
-        ),
+  Future<void> _removeAt(BookingModel booking) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (d) => AlertDialog(
+        title: const Text('Xóa'),
+        content: const Text('Xóa mục này?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(d, false),
+            child: const Text('Hủy'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(d, true),
+            child: const Text('Xóa'),
+          ),
+        ],
       ),
     );
+
+    if (ok == true) {
+      await _menuService.deleteBooking(booking.id);
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Đã xóa')));
+    }
   }
 
   String _fmtNum(num? v) {
@@ -59,32 +72,29 @@ class _HotelBookingHistoryPageState extends State<HotelBookingHistoryPage> {
     return '${v.toStringAsFixed(0).replaceAllMapped(RegExp(r"\B(?=(\d{3})+(?!\d))"), (m) => '.')} ₫';
   }
 
+  String _formatDate(DateTime date) {
+    return '${date.day}/${date.month}/${date.year}';
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Lịch sử đặt phòng')),
-      body: _history.isEmpty
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : _history.isEmpty
           ? const Center(child: Text('Chưa có lịch sử đặt phòng'))
           : ListView.separated(
               padding: const EdgeInsets.all(12),
               itemCount: _history.length,
               separatorBuilder: (_, __) => const SizedBox(height: 8),
               itemBuilder: (context, i) {
-                final r = _history[i];
-                final title = r['hotelName'] ?? 'Khách sạn';
-                String dateRange = '';
-                try {
-                  final from = DateTime.parse(
-                    r['range']['from'],
-                  ).toLocal().toString().split('.').first;
-                  final to = DateTime.parse(
-                    r['range']['to'],
-                  ).toLocal().toString().split('.').first;
-                  dateRange = '$from → $to';
-                } catch (_) {}
-                final total = r['total'];
+                final booking = _history[i];
+                final dateRange =
+                    '${_formatDate(booking.startDate)} → ${_formatDate(booking.endDate)}';
+
                 return Dismissible(
-                  key: ValueKey(r['timestamp'] ?? i),
+                  key: ValueKey(booking.id),
                   direction: DismissDirection.startToEnd,
                   background: Container(
                     color: Colors.redAccent,
@@ -93,49 +103,34 @@ class _HotelBookingHistoryPageState extends State<HotelBookingHistoryPage> {
                     child: const Icon(Icons.delete, color: Colors.white),
                   ),
                   confirmDismiss: (_) async {
-                    final ok = await showDialog<bool>(
-                      context: context,
-                      builder: (d) => AlertDialog(
-                        title: const Text('Xóa'),
-                        content: const Text('Xóa mục này?'),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(d, false),
-                            child: const Text('Hủy'),
-                          ),
-                          TextButton(
-                            onPressed: () => Navigator.pop(d, true),
-                            child: const Text('Xóa'),
-                          ),
-                        ],
-                      ),
-                    );
-                    if (ok == true) await _removeAt(i);
-                    return ok == true;
+                    await _removeAt(booking);
+                    return false; // Firebase handles the removal
                   },
                   child: Card(
                     child: ListTile(
                       leading: const Icon(Icons.hotel),
-                      title: Text(title),
-                      subtitle: Text(dateRange),
-                      trailing: total == null ? null : Text(_fmtNum(total)),
-                      onTap: () => showDialog<void>(
-                        context: context,
-                        builder: (d) => AlertDialog(
-                          title: Text(title),
-                          content: SingleChildScrollView(
-                            child: Text(
-                              const JsonEncoder.withIndent('  ').convert(r),
+                      title: Text(booking.serviceName),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(dateRange),
+                          Text(
+                            'Trạng thái: ${booking.status == 'upcoming'
+                                ? 'Sắp tới'
+                                : booking.status == 'completed'
+                                ? 'Đã hoàn thành'
+                                : booking.status}',
+                            style: TextStyle(
+                              color: booking.status == 'upcoming'
+                                  ? Colors.blue
+                                  : Colors.green,
+                              fontSize: 12,
                             ),
                           ),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(d),
-                              child: const Text('Đóng'),
-                            ),
-                          ],
-                        ),
+                        ],
                       ),
+                      trailing: Text(_fmtNum(booking.totalPrice)),
+                      onLongPress: () => _removeAt(booking),
                     ),
                   ),
                 );

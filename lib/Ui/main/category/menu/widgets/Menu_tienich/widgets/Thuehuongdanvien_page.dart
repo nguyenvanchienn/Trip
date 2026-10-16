@@ -1,6 +1,15 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:tourn/ultils.enums/image_utils.dart';
+import 'package:tourn/Ui/main/category/menu/widgets/Menu_tienich/widgets/image_carousel.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:tourn/data/firebase/firebase_business_service.dart';
+
+import 'package:tourn/Ui/main/category/business/business_profile_page.dart';
+import 'package:tourn/Ui/main/category/menu/widgets/Menu_items/widgets/donhangcuaban_page.dart';
+import 'package:tourn/Ui/main/category/menu/widgets/Menu_tienich/widgets/Thuehuongdanvien_booking.dart';
 
 // Trạng thái dùng tiếng Việt (chỉ 2 trạng thái theo yêu cầu)
 const String STATUS_UPCOMING = 'Sắp diễn ra';
@@ -14,8 +23,6 @@ class ThuehuongdanvienPage extends StatefulWidget {
 }
 
 class _ThuehuongdanvienPageState extends State<ThuehuongdanvienPage> {
-  final TextEditingController _searchController = TextEditingController();
-
   final List<Map<String, dynamic>> _guides = [
     {
       'id': 1,
@@ -94,18 +101,19 @@ class _ThuehuongdanvienPageState extends State<ThuehuongdanvienPage> {
   String? _filterLanguage;
   double? _maxPrice;
   String _sort = 'Phù hợp';
-  final Set<int> _favorites = {};
 
   // Booking history for the current user (kept in SharedPreferences). Each booking: {id, guideId, guideName, start, days, status, completedAt?, review?}
-  // Số ngày (khoảng thời gian) sau khi hoàn thành mà người dùng được phép viết/sửa đánh giá.
-  // CHÚ Ý: Đây là "chỗ đợi 7 ngày" mà bạn hỏi — nếu muốn thay đổi thời gian cho phép, chỉnh giá trị này.
-  final int _reviewWindowDays = 7;
 
   final List<Map<String, dynamic>> _bookings = [];
+  late Stream<List<Map<String, dynamic>>> _guideStream;
+  Future<DocumentSnapshot>? _ownerProfileFuture;
 
   @override
   void initState() {
     super.initState();
+    _guideStream = FirebaseBusinessService().streamServices(
+      collectionName: 'business_guide_services',
+    );
     _loadBookings();
   }
 
@@ -133,14 +141,20 @@ class _ThuehuongdanvienPageState extends State<ThuehuongdanvienPage> {
   DateTime? _parseDate(String s) {
     try {
       final parts = s.split('/');
-      if (parts.length < 3) return null;
-      final day = int.parse(parts[0]);
-      final month = int.parse(parts[1]);
-      final year = int.parse(parts[2]);
-      return DateTime(year, month, day);
+      if (parts.length != 3) return null;
+      return DateTime(
+        int.parse(parts[2]),
+        int.parse(parts[1]),
+        int.parse(parts[0]),
+      );
     } catch (_) {
       return null;
     }
+  }
+
+  String _fmtPrice(num val) {
+    final str = (val * 1000).toStringAsFixed(0);
+    return str.replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (m) => '.');
   }
 
   // Automatically check bookings and mark as completed when booking end date has passed
@@ -172,124 +186,6 @@ class _ThuehuongdanvienPageState extends State<ThuehuongdanvienPage> {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('guide_bookings', json.encode(_bookings));
     } catch (_) {}
-  }
-
-  // Thêm dữ liệu demo vào lịch sử để minh họa các trạng thái và tính năng
-  void _insertDemoBookings() {
-    final now = DateTime.now();
-    String fmt(DateTime d) => '${d.day}/${d.month}/${d.year}';
-
-    final b1Start = now.add(const Duration(days: 5)); // future upcoming
-    final b2Start = now.subtract(
-      const Duration(days: 1),
-    ); // ongoing (2/3 of 3-day)
-    final b3Start = now.subtract(const Duration(days: 5)); // completed recently
-    final b4Start = now.subtract(
-      const Duration(days: 3),
-    ); // completed with review
-    final b5Start = now.subtract(
-      const Duration(days: 15),
-    ); // completed expired (>7 days)
-
-    final demo = <Map<String, dynamic>>[
-      {
-        'id': DateTime.now().millisecondsSinceEpoch + 1,
-        'guideId': 1,
-        'guideName': 'Nguyễn Văn A',
-        'start': fmt(b1Start),
-        'days': 3,
-        'status': STATUS_UPCOMING,
-      },
-      {
-        'id': DateTime.now().millisecondsSinceEpoch + 2,
-        'guideId': 1,
-        'guideName': 'Nguyễn Văn A',
-        'start': fmt(b2Start),
-        'days': 3,
-        'status': STATUS_UPCOMING, // started, elapsed >= 2/3
-      },
-      {
-        'id': DateTime.now().millisecondsSinceEpoch + 3,
-        'guideId': 2,
-        'guideName': 'Trần Thị B',
-        'start': fmt(b3Start),
-        'days': 2,
-        'status': STATUS_COMPLETED,
-        'completedAt': b3Start
-            .add(const Duration(days: 2 - 1))
-            .toIso8601String(),
-      },
-      {
-        'id': DateTime.now().millisecondsSinceEpoch + 4,
-        'guideId': 1,
-        'guideName': 'Nguyễn Văn A',
-        'start': fmt(b4Start),
-        'days': 1,
-        'status': STATUS_COMPLETED,
-        'completedAt': b4Start
-            .add(const Duration(days: 1 - 1))
-            .toIso8601String(),
-        'review': {
-          'author': 'Bạn',
-          'rating': 5,
-          'text': 'Rất tốt',
-          'date': _formatDate(now.subtract(const Duration(days: 1))),
-        },
-      },
-      {
-        'id': DateTime.now().millisecondsSinceEpoch + 5,
-        'guideId': 3,
-        'guideName': 'Lê C',
-        'start': fmt(b5Start),
-        'days': 1,
-        'status': STATUS_COMPLETED,
-        'completedAt': b5Start
-            .add(const Duration(days: 1 - 1))
-            .toIso8601String(),
-      },
-    ];
-
-    setState(() {
-      _bookings.clear();
-      _bookings.addAll(demo);
-    });
-    _saveBookings();
-  }
-
-  List<Map<String, dynamic>> get _filteredGuides {
-    final q = _searchController.text.trim().toLowerCase();
-    List<Map<String, dynamic>> list = _guides.where((g) {
-      final matchQ =
-          q.isEmpty ||
-          g['name'].toString().toLowerCase().contains(q) ||
-          (g['languages'] as List).any(
-            (l) => l.toString().toLowerCase().contains(q),
-          );
-      final matchLang =
-          _filterLanguage == null ||
-          (g['languages'] as List).contains(_filterLanguage);
-      final matchPrice =
-          _maxPrice == null || (g['pricePerDay'] as double) <= _maxPrice!;
-      return matchQ && matchLang && matchPrice;
-    }).toList();
-
-    if (_sort == 'Đánh giá') {
-      list.sort(
-        (a, b) => (b['rating'] as double).compareTo(a['rating'] as double),
-      );
-    } else if (_sort == 'Giá: Thấp') {
-      list.sort(
-        (a, b) =>
-            (a['pricePerDay'] as double).compareTo(b['pricePerDay'] as double),
-      );
-    } else if (_sort == 'Giá: Cao') {
-      list.sort(
-        (a, b) =>
-            (b['pricePerDay'] as double).compareTo(a['pricePerDay'] as double),
-      );
-    }
-
-    return list;
   }
 
   void _openFilterSheet() {
@@ -381,533 +277,19 @@ class _ThuehuongdanvienPageState extends State<ThuehuongdanvienPage> {
     );
   }
 
-  void _openBookingHistory() {
-    // Refresh booking statuses before showing history, so auto-complete can run
-    _refreshBookingsStatus();
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      builder: (context) {
-        // Constrain height and allow scrolling to avoid BOTTOM OVERFLOW
-        return SafeArea(
-          child: Padding(
-            padding: EdgeInsets.only(
-              left: 16.0,
-              right: 16.0,
-              top: 16.0,
-              bottom: MediaQuery.of(context).viewInsets.bottom + 16.0,
-            ),
-            child: ConstrainedBox(
-              constraints: BoxConstraints(
-                maxHeight: MediaQuery.of(context).size.height * 0.8,
-              ),
-              child: StatefulBuilder(
-                builder: (context, setStateSheet) {
-                  return SingleChildScrollView(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Lịch sử đặt',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        if (_bookings.isEmpty)
-                          const Text('Chưa có đặt chỗ nào.'),
-                        ..._bookings.map((b) {
-                          return Card(
-                            margin: const EdgeInsets.symmetric(vertical: 6),
-                            child: ListTile(
-                              title: Text(b['guideName'].toString()),
-                              subtitle: Text(
-                                'Từ: ${b['start']} • ${b['days']} ngày • Trạng thái: ${b['status']}',
-                              ),
-                              trailing: Builder(
-                                builder: (context) {
-                                  final now = DateTime.now();
-                                  // whether this booking already has a review
-                                  final hasReview = b['review'] != null;
-
-                                  if (b['status'] == STATUS_UPCOMING) {
-                                    // For 'Sắp diễn ra': do not allow immediate review.
-                                    // Allow 'Đánh giá' only after 2/3 of the booking duration has elapsed.
-                                    final startDate = _parseDate(
-                                      b['start'] as String? ?? '',
-                                    );
-                                    final days = (b['days'] as int?) ?? 1;
-                                    if (startDate != null) {
-                                      // Normalize days to avoid time-of-day issues
-                                      final startDay = DateTime(
-                                        startDate.year,
-                                        startDate.month,
-                                        startDate.day,
-                                      );
-                                      final nowDay = DateTime(
-                                        now.year,
-                                        now.month,
-                                        now.day,
-                                      );
-
-                                      // Nếu booking chưa bắt đầu thì không hiển thị nút gì
-                                      if (nowDay.isBefore(startDay)) {
-                                        return const SizedBox.shrink();
-                                      }
-
-                                      // Booking đã bắt đầu -> kiểm tra elapsed / threshold
-                                      final elapsedDays =
-                                          nowDay.difference(startDay).inDays +
-                                          1; // inclusive count
-                                      final threshold = ((2 * days) / 3).ceil();
-
-                                      // Nếu đã trôi qua >= 2/3 và chưa có review -> cho 'Đánh giá'
-                                      if (!hasReview &&
-                                          elapsedDays >= threshold) {
-                                        return TextButton(
-                                          onPressed: () {
-                                            Navigator.pop(context);
-                                            Future.microtask(
-                                              () =>
-                                                  _openWriteReviewForBooking(b),
-                                            );
-                                          },
-                                          child: const Text('Đánh giá'),
-                                        );
-                                      }
-
-                                      // Ngược lại (đã bắt đầu nhưng chưa đủ 2/3) -> cho phép 'Đánh dấu hoàn thành' để khách tự xác nhận
-                                      return TextButton(
-                                        onPressed: () {
-                                          setState(() {
-                                            b['status'] = STATUS_COMPLETED;
-                                            b['completedAt'] = DateTime.now()
-                                                .toIso8601String();
-                                          });
-                                          _saveBookings();
-                                          setStateSheet(() {});
-                                          setState(() {});
-                                          Navigator.pop(context);
-                                          // open review immediately
-                                          Future.microtask(
-                                            () => _openWriteReviewForBooking(b),
-                                          );
-                                        },
-                                        child: const Text(
-                                          'Đánh dấu hoàn thành',
-                                        ),
-                                      );
-                                    }
-
-                                    // Nếu không có startDate hợp lệ, an toàn hiển thị nút 'Đánh dấu hoàn thành'
-                                    return TextButton(
-                                      onPressed: () {
-                                        setState(() {
-                                          b['status'] = STATUS_COMPLETED;
-                                          b['completedAt'] = DateTime.now()
-                                              .toIso8601String();
-                                        });
-                                        _saveBookings();
-                                        setStateSheet(() {});
-                                        setState(() {});
-                                        Navigator.pop(context);
-                                        // open review immediately
-                                        Future.microtask(
-                                          () => _openWriteReviewForBooking(b),
-                                        );
-                                      },
-                                      child: const Text('Đánh dấu hoàn thành'),
-                                    );
-                                  }
-
-                                  if (b['status'] == STATUS_COMPLETED) {
-                                    // Chuẩn hóa so sánh theo ngày (date-only) để tránh lỗi time-of-day
-                                    final completedAtRaw =
-                                        b['completedAt'] ?? '';
-                                    final completedAtParsed =
-                                        DateTime.tryParse(completedAtRaw) ??
-                                        DateTime.now().subtract(
-                                          Duration(days: _reviewWindowDays + 1),
-                                        );
-                                    final completedDay = DateTime(
-                                      completedAtParsed.year,
-                                      completedAtParsed.month,
-                                      completedAtParsed.day,
-                                    );
-                                    final nowDay = DateTime(
-                                      now.year,
-                                      now.month,
-                                      now.day,
-                                    );
-                                    final completedDiff = nowDay
-                                        .difference(completedDay)
-                                        .inDays;
-
-                                    // Nếu đã qua >= _reviewWindowDays kể từ khi hoàn thành -> hiện 'Đặt lại'
-                                    if (completedDiff >= _reviewWindowDays) {
-                                      return TextButton(
-                                        onPressed: () {
-                                          final guide = _guides.firstWhere(
-                                            (g) => g['id'] == b['guideId'],
-                                            orElse: () => <String, dynamic>{},
-                                          );
-                                          Navigator.pop(context);
-                                          Future.microtask(
-                                            () => _openBookingSheet(guide),
-                                          );
-                                        },
-                                        child: const Text('Đặt lại'),
-                                      );
-                                    }
-
-                                    // Chưa quá hạn đặt lại: cho phép viết hoặc sửa đánh giá trong khung _reviewWindowDays
-                                    if (!hasReview &&
-                                        completedDiff < _reviewWindowDays) {
-                                      return TextButton(
-                                        onPressed: () {
-                                          Navigator.pop(context);
-                                          Future.microtask(
-                                            () => _openWriteReviewForBooking(b),
-                                          );
-                                        },
-                                        child: const Text('Đánh giá'),
-                                      );
-                                    }
-
-                                    if (hasReview) {
-                                      final reviewDate =
-                                          DateTime.tryParse(
-                                            b['review']['date'] ?? '',
-                                          ) ??
-                                          DateTime.now();
-                                      final reviewDay = DateTime(
-                                        reviewDate.year,
-                                        reviewDate.month,
-                                        reviewDate.day,
-                                      );
-                                      if (nowDay.difference(reviewDay).inDays <=
-                                          _reviewWindowDays) {
-                                        return TextButton(
-                                          onPressed: () {
-                                            Navigator.pop(context);
-                                            Future.microtask(
-                                              () => _openWriteReviewForBooking(
-                                                b,
-                                                edit: true,
-                                              ),
-                                            );
-                                          },
-                                          child: const Text('Sửa đánh giá'),
-                                        );
-                                      }
-                                    }
-
-                                    return const SizedBox.shrink();
-                                  }
-
-                                  return const SizedBox.shrink();
-                                },
-                              ),
-                            ),
-                          );
-                        }),
-                        const SizedBox(height: 12),
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: TextButton(
-                            onPressed: () => Navigator.pop(context),
-                            child: const Text('Đóng'),
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  String _formatDate(DateTime d) =>
-      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
-
-  void _addOrEditReviewToGuide(
-    int guideId,
-    Map<String, dynamic> review, {
-    String? oldDate,
-  }) {
-    final idx = _guides.indexWhere((g) => g['id'] == guideId);
-    if (idx == -1) return;
-    final g = _guides[idx];
-    final reviews = List<Map<String, dynamic>>.from(
-      g['reviewsList'] as List? ?? [],
-    );
-    int currentCount = (g['reviews'] as int?) ?? reviews.length;
-    double currentRating = (g['rating'] as double?) ?? 0.0;
-
-    if (oldDate != null) {
-      final rIdx = reviews.indexWhere(
-        (r) => r['date'] == oldDate && r['author'] == 'Bạn',
-      );
-      if (rIdx != -1) {
-        final oldRating = (reviews[rIdx]['rating'] as num).toDouble();
-        reviews[rIdx] = review;
-        final newRating = currentCount == 0
-            ? (review['rating'] as num).toDouble()
-            : ((currentRating * currentCount) -
-                      oldRating +
-                      (review['rating'] as num)) /
-                  currentCount;
-        g['reviewsList'] = reviews;
-        g['rating'] = newRating;
-        setState(() {});
-        return;
-      }
-    }
-    // insert new
-    reviews.insert(0, review);
-    final newCount = currentCount + 1;
-    final newRating =
-        (currentRating * currentCount + (review['rating'] as num)) / newCount;
-    g['reviewsList'] = reviews;
-    g['reviews'] = newCount;
-    g['rating'] = newRating;
-    setState(() {});
-  }
-
-  void _openWriteReviewForBooking(
-    Map<String, dynamic> booking, {
-    bool edit = false,
-  }) {
-    final guideId = booking['guideId'] as int;
-    final TextEditingController controller = TextEditingController(
-      text: edit && booking['review'] != null
-          ? booking['review']['text'] as String
-          : '',
-    );
-    int selected = edit && booking['review'] != null
-        ? (booking['review']['rating'] as int)
-        : 5;
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) {
-        return DraggableScrollableSheet(
-          expand: false,
-          initialChildSize: 0.5,
-          minChildSize: 0.3,
-          maxChildSize: 0.9,
-          builder: (context, scrollController) {
-            return Container(
-              decoration: BoxDecoration(
-                color: Theme.of(context).scaffoldBackgroundColor,
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(16),
-                ),
-              ),
-              child: SingleChildScrollView(
-                controller: scrollController,
-                padding: const EdgeInsets.all(16),
-                child: StatefulBuilder(
-                  builder: (context, setStateSheet) {
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Viết đánh giá',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        const Text('Chọn số sao'),
-                        Row(
-                          children: List.generate(5, (i) {
-                            final idx = i + 1;
-                            return IconButton(
-                              onPressed: () =>
-                                  setStateSheet(() => selected = idx),
-                              icon: Icon(
-                                idx <= selected
-                                    ? Icons.star
-                                    : Icons.star_border,
-                                color: Colors.amber,
-                              ),
-                            );
-                          }),
-                        ),
-                        const SizedBox(height: 12),
-                        TextField(
-                          controller: controller,
-                          maxLines: 5,
-                          decoration: const InputDecoration(
-                            hintText: 'Viết nhận xét của bạn...',
-                            border: OutlineInputBorder(),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        Row(
-                          children: [
-                            const Spacer(),
-                            ElevatedButton(
-                              onPressed: () {
-                                final text = controller.text.trim();
-                                if (text.isEmpty) return;
-                                final now = DateTime.now();
-                                final review = {
-                                  'author': 'Bạn',
-                                  'rating': selected,
-                                  'text': text,
-                                  'date': _formatDate(now),
-                                };
-                                // add or edit review on guide
-                                _addOrEditReviewToGuide(
-                                  guideId,
-                                  review,
-                                  oldDate: edit && booking['review'] != null
-                                      ? booking['review']['date'] as String
-                                      : null,
-                                );
-                                // attach to booking and persist
-                                booking['review'] = review;
-                                _saveBookings();
-                                // close and refresh
-                                Navigator.pop(context);
-                                setState(() {});
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('Cảm ơn bạn đã gửi đánh giá'),
-                                  ),
-                                );
-                              },
-                              child: const Text('Gửi'),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                      ],
-                    );
-                  },
-                ),
-              ),
-            );
+  void _openBookingSheet(Map<String, dynamic> guide) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => GuideBookingPage(
+          guide: guide,
+          onBooked: (booking) {
+            setState(() {
+              _bookings.add(booking);
+            });
+            _saveBookings();
           },
-        );
-      },
-    );
-  }
-
-  void _openBookingSheet(Map<String, dynamic> guide) async {
-    DateTime? start = DateTime.now().add(const Duration(days: 1));
-    int days = 1;
-
-    await showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setStateSheet) {
-            return Padding(
-              padding: EdgeInsets.only(
-                bottom: MediaQuery.of(context).viewInsets.bottom,
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Đặt hướng dẫn viên: ${guide['name']}',
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        const Text('Ngày bắt đầu: '),
-                        TextButton(
-                          onPressed: () async {
-                            final d = await showDatePicker(
-                              context: context,
-                              initialDate: start!,
-                              firstDate: DateTime.now(),
-                              lastDate: DateTime.now().add(
-                                const Duration(days: 365),
-                              ),
-                            );
-                            if (d != null) setStateSheet(() => start = d);
-                          },
-                          child: Text(
-                            start != null
-                                ? '${start!.day}/${start!.month}/${start!.year}'
-                                : 'Chọn ngày',
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        const Text('Số ngày: '),
-                        IconButton(
-                          onPressed: () => setStateSheet(
-                            () => days = days > 1 ? days - 1 : 1,
-                          ),
-                          icon: const Icon(Icons.remove),
-                        ),
-                        Text('$days'),
-                        IconButton(
-                          onPressed: () => setStateSheet(() => days++),
-                          icon: const Icon(Icons.add),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        const Spacer(),
-                        ElevatedButton(
-                          onPressed: () {
-                            final booking = {
-                              'id': DateTime.now().millisecondsSinceEpoch,
-                              'guideId': guide['id'],
-                              'guideName': guide['name'],
-                              'start':
-                                  '${start!.day}/${start!.month}/${start!.year}',
-                              'days': days,
-                              'status': STATUS_UPCOMING,
-                            };
-                            setState(() {
-                              _bookings.add(booking);
-                            });
-                            _saveBookings();
-                            Navigator.pop(context);
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  'Đặt chỗ đã được thêm vào lịch sử: ${guide['name']}',
-                                ),
-                              ),
-                            );
-                          },
-                          child: const Text('Xác nhận'),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
+        ),
+      ),
     );
   }
 
@@ -940,164 +322,298 @@ class _ThuehuongdanvienPageState extends State<ThuehuongdanvienPage> {
             icon: const Icon(Icons.filter_list),
           ),
           IconButton(
-            onPressed: _openBookingHistory,
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) =>
+                      const DonHangCuaBanPage(serviceType: 'guide_rental'),
+                ),
+              );
+            },
             icon: const Icon(Icons.history),
             tooltip: 'Lịch sử đặt',
           ),
         ],
       ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(12),
-            child: TextField(
-              controller: _searchController,
-              onChanged: (_) => setState(() {}),
-              decoration: InputDecoration(
-                hintText: 'Tìm tên hoặc ngôn ngữ...',
-                prefixIcon: const Icon(Icons.search),
-                suffixIcon: IconButton(
-                  onPressed: () => _searchController.clear(),
-                  icon: const Icon(Icons.clear),
-                ),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 0,
-                ),
+      body: StreamBuilder<List<Map<String, dynamic>>>(
+        stream: _guideStream,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          final rawGuides = snapshot.data ?? [];
+          List<Map<String, dynamic>> _filteredGuides = rawGuides
+              .where((it) => it['status'] == 'active')
+              .map((g) {
+                final extra = g['extra'] as Map<String, dynamic>? ?? {};
+                return {
+                  'id': g['id'],
+                  'ownerId': g['ownerId'],
+                  'name': g['name'] ?? '',
+                  'avatar': extra['imageUrl'] ?? 'asset/images/employee-5.png',
+                  'images': extra['images'] is List
+                      ? (extra['images'] as List)
+                            .map((e) => e.toString())
+                            .toList()
+                      : [extra['imageUrl'] ?? 'asset/images/employee-5.png'],
+                  'languages':
+                      extra['languages']?.toString().split(',') ??
+                      ['Tiếng Việt'],
+                  'rating': (extra['rating'] as num?)?.toDouble() ?? 0.0,
+                  'reviews': (extra['reviews'] as num?)?.toInt() ?? 0,
+                  'pricePerDay': (g['price'] as num?)?.toDouble() ?? 0.0,
+                  'experience': extra['experienceYears']?.toString() != null
+                      ? '${extra['experienceYears']} năm kinh nghiệm'
+                      : 'Hướng dẫn viên',
+                  'itineraryTips': extra['specialty'] ?? '',
+                  'available': true,
+                  'reviewsList': extra['reviewsList'] is List
+                      ? List<Map<String, dynamic>>.from(extra['reviewsList'])
+                      : <Map<String, dynamic>>[],
+                };
+              })
+              .toList();
+
+          _filteredGuides = _filteredGuides.where((g) {
+            final matchLang =
+                _filterLanguage == null ||
+                (g['languages'] as List).contains(_filterLanguage);
+            final matchPrice =
+                _maxPrice == null || (g['pricePerDay'] as double) <= _maxPrice!;
+            return matchLang && matchPrice;
+          }).toList();
+
+          if (_sort == 'Đánh giá') {
+            _filteredGuides.sort(
+              (a, b) =>
+                  (b['rating'] as double).compareTo(a['rating'] as double),
+            );
+          } else if (_sort == 'Giá: Thấp') {
+            _filteredGuides.sort(
+              (a, b) => (a['pricePerDay'] as double).compareTo(
+                b['pricePerDay'] as double,
               ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-            child: Row(
-              children: [
-                Text('Kết quả: ${_filteredGuides.length}'),
-                const Spacer(),
-                DropdownButton<String>(
-                  value: _sort,
-                  items: ['Phù hợp', 'Đánh giá', 'Giá: Thấp', 'Giá: Cao']
-                      .map((s) => DropdownMenuItem(value: s, child: Text(s)))
-                      .toList(),
-                  onChanged: (v) => setState(() => _sort = v ?? 'Phù hợp'),
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: ListView.separated(
-              padding: const EdgeInsets.all(12),
-              itemBuilder: (context, index) {
-                final g = _filteredGuides[index];
-                final fav = _favorites.contains(g['id'] as int);
-                return Card(
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  clipBehavior: Clip.hardEdge,
-                  child: InkWell(
-                    onTap: () => _openGuideDetail(g),
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Row(
-                        children: [
-                          CircleAvatar(
-                            radius: 30,
-                            backgroundImage: AssetImage(g['avatar'] as String),
-                            onBackgroundImageError: (_, __) {},
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: Text(
-                                        g['name'] as String,
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    IconButton(
-                                      onPressed: () {
-                                        setState(() {
-                                          if (fav)
-                                            _favorites.remove(g['id'] as int);
-                                          else
-                                            _favorites.add(g['id'] as int);
-                                        });
-                                      },
-                                      icon: Icon(
-                                        fav
-                                            ? Icons.favorite
-                                            : Icons.favorite_border,
-                                        color: fav ? Colors.red : null,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 6),
-                                Text(
-                                  g['experience'] as String,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                const SizedBox(height: 8),
-                                Row(
-                                  children: [
-                                    Icon(
-                                      Icons.star,
-                                      color: Colors.amber,
-                                      size: 16,
-                                    ),
-                                    const SizedBox(width: 6),
-                                    Text('${g['rating']}'),
-                                    const SizedBox(width: 12),
-                                    Icon(Icons.location_on, size: 16),
-                                    const SizedBox(width: 6),
-                                    Text('${g['reviews']} review'),
-                                  ],
-                                ),
-                              ],
+            );
+          } else if (_sort == 'Giá: Cao') {
+            _filteredGuides.sort(
+              (a, b) => (b['pricePerDay'] as double).compareTo(
+                a['pricePerDay'] as double,
+              ),
+            );
+          }
+
+          return Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(12),
+                child: GestureDetector(
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const _TourGuideSearchPage(),
+                      ),
+                    );
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(18),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.05),
+                          blurRadius: 12,
+                          offset: const Offset(0, 6),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.search,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Tìm tên hoặc ngôn ngữ...',
+                            style: TextStyle(
+                              color: Colors.grey.shade500,
+                              fontSize: 15,
                             ),
                           ),
-                          const SizedBox(width: 12),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.end,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 4,
+                ),
+                child: Row(
+                  children: [
+                    Text('Kết quả: ${_filteredGuides.length}'),
+                    const Spacer(),
+                    DropdownButton<String>(
+                      value: _sort,
+                      items: ['Phù hợp', 'Đánh giá', 'Giá: Thấp', 'Giá: Cao']
+                          .map(
+                            (s) => DropdownMenuItem(value: s, child: Text(s)),
+                          )
+                          .toList(),
+                      onChanged: (v) => setState(() => _sort = v ?? 'Phù hợp'),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: ListView.separated(
+                  padding: const EdgeInsets.all(12),
+                  itemCount: _filteredGuides.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 12),
+                  itemBuilder: (context, index) {
+                    final g = _filteredGuides[index];
+                    final isOwner =
+                        FirebaseAuth.instance.currentUser?.uid ==
+                        (g['ownerId'] ?? '').toString();
+
+                    Widget cardWidget = Card(
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      clipBehavior: Clip.hardEdge,
+                      child: InkWell(
+                        onTap: () => _openGuideDetail(g),
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Row(
                             children: [
-                              Text(
-                                '${(g['pricePerDay'] as double).toStringAsFixed(0)}k / ngày',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.deepOrange,
+                              CircleAvatar(
+                                radius: 30,
+                                backgroundImage:
+                                    (g['avatar'] as String).startsWith(
+                                          'http',
+                                        ) ||
+                                        (g['avatar'] as String).startsWith(
+                                          'data:image',
+                                        )
+                                    ? getImageProvider(g['avatar'] as String)
+                                    : AssetImage(g['avatar'] as String)
+                                          as ImageProvider,
+                                onBackgroundImageError: (_, __) {},
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            g['name'] as String,
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      g['experience'] as String,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Row(
+                                      children: [
+                                        Icon(
+                                          Icons.star,
+                                          color: Colors.amber,
+                                          size: 16,
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Text('${g['rating']}'),
+                                        const SizedBox(width: 12),
+                                        Icon(Icons.location_on, size: 16),
+                                        const SizedBox(width: 6),
+                                        Text('${g['reviews']} review'),
+                                      ],
+                                    ),
+                                  ],
                                 ),
                               ),
-                              const SizedBox(height: 12),
-                              ElevatedButton(
-                                onPressed: g['available'] == true
-                                    ? () => _openBookingSheet(g)
-                                    : null,
-                                child: const Text('Đặt'),
+                              const SizedBox(width: 12),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: [
+                                  const SizedBox(height: 16),
+                                  Text(
+                                    '${_fmtPrice(g['pricePerDay'] as num)}',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.black,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 12),
+                                  if (!isOwner)
+                                    ElevatedButton(
+                                      onPressed: g['available'] == true
+                                          ? () => _openBookingSheet(g)
+                                          : null,
+                                      child: const Text('Đặt'),
+                                    ),
+                                ],
                               ),
                             ],
                           ),
-                        ],
+                        ),
                       ),
-                    ),
-                  ),
-                );
-              },
-              separatorBuilder: (_, __) => const SizedBox(height: 12),
-              itemCount: _filteredGuides.length,
-            ),
-          ),
-        ],
+                    );
+
+                    final ownerId = (g['ownerId'] ?? '').toString();
+                    if (ownerId.isNotEmpty) {
+                      Widget currentCard = cardWidget;
+                      cardWidget =
+                          FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                            future: FirebaseFirestore.instance
+                                .collection('user_profiles')
+                                .doc(ownerId)
+                                .get(),
+                            builder: (context, profileSnap) {
+                              final profileData =
+                                  profileSnap.data?.data() ?? {};
+                              final businessProfile =
+                                  (profileData['businessProfile']
+                                      as Map<String, dynamic>?) ??
+                                  {};
+                              final isOpen =
+                                  businessProfile['isOpen'] as bool? ?? true;
+                              return Opacity(
+                                opacity: isOpen ? 1.0 : 0.5,
+                                child: currentCard,
+                              );
+                            },
+                          );
+                    }
+
+                    return cardWidget;
+                  },
+                ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -1127,6 +643,9 @@ class _ThuehuongdanvienDetailPageState
   late double _rating;
   late int _reviewCount;
 
+  bool _isBusy = false;
+  bool _loadingBusy = true;
+
   @override
   void initState() {
     super.initState();
@@ -1135,6 +654,42 @@ class _ThuehuongdanvienDetailPageState
     );
     _rating = (widget.guide['rating'] as double?) ?? 0.0;
     _reviewCount = (widget.guide['reviews'] as int?) ?? _reviews.length;
+    _checkAvailability();
+
+    final ownerId = widget.guide['ownerId']?.toString() ?? '';
+    if (ownerId.isNotEmpty) {
+      _ownerProfileFuture = FirebaseFirestore.instance
+          .collection('user_profiles')
+          .doc(ownerId)
+          .get();
+    }
+  }
+
+  Future<DocumentSnapshot>? _ownerProfileFuture;
+
+  String _fmtPrice(num val) {
+    final str = (val * 1000).toStringAsFixed(0);
+    return str.replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (m) => '.');
+  }
+
+  Future<void> _checkAvailability() async {
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('tour_guide_orders')
+          .where('guideId', isEqualTo: widget.guide['id'])
+          .where('status', whereIn: ['pending', 'in_progress', 'upcoming'])
+          .get();
+      if (mounted) {
+        setState(() {
+          _isBusy = snap.docs.isNotEmpty;
+          _loadingBusy = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _loadingBusy = false);
+      }
+    }
   }
 
   String _formatDate(DateTime d) =>
@@ -1317,118 +872,15 @@ class _ThuehuongdanvienDetailPageState
   }
 
   void _openBookingSheet() {
-    DateTime start = DateTime.now().add(const Duration(days: 1));
-    int days = 1;
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) {
-        return DraggableScrollableSheet(
-          expand: false,
-          initialChildSize: 0.5,
-          minChildSize: 0.3,
-          maxChildSize: 0.9,
-          builder: (context, scrollController) {
-            return Container(
-              decoration: BoxDecoration(
-                color: Theme.of(context).scaffoldBackgroundColor,
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(16),
-                ),
-              ),
-              child: SingleChildScrollView(
-                controller: scrollController,
-                padding: const EdgeInsets.all(16),
-                child: StatefulBuilder(
-                  builder: (context, setStateSheet) {
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Đặt hướng dẫn viên: ${widget.guide['name']}',
-                          style: const TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                        const SizedBox(height: 12),
-                        Row(
-                          children: [
-                            const Text('Ngày bắt đầu: '),
-                            TextButton(
-                              onPressed: () async {
-                                final d = await showDatePicker(
-                                  context: context,
-                                  initialDate: start,
-                                  firstDate: DateTime.now(),
-                                  lastDate: DateTime.now().add(
-                                    const Duration(days: 365),
-                                  ),
-                                );
-                                if (d != null) setStateSheet(() => start = d);
-                              },
-                              child: Text(
-                                '${start.day}/${start.month}/${start.year}',
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Row(
-                          children: [
-                            const Text('Số ngày: '),
-                            IconButton(
-                              onPressed: () => setStateSheet(
-                                () => days = days > 1 ? days - 1 : 1,
-                              ),
-                              icon: const Icon(Icons.remove),
-                            ),
-                            Text('$days'),
-                            IconButton(
-                              onPressed: () => setStateSheet(() => days++),
-                              icon: const Icon(Icons.add),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        Row(
-                          children: [
-                            const Spacer(),
-                            ElevatedButton(
-                              onPressed: () {
-                                final booking = {
-                                  'id': DateTime.now().millisecondsSinceEpoch,
-                                  'guideId': widget.guide['id'],
-                                  'guideName': widget.guide['name'],
-                                  'start':
-                                      '${start.day}/${start.month}/${start.year}',
-                                  'days': days,
-                                  'status': STATUS_UPCOMING,
-                                };
-                                widget.onBooked?.call(booking);
-                                // notify parent to persist bookings
-                                widget.onBookingsUpdated?.call();
-                                Navigator.pop(context);
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      'Đặt chỗ đã được thêm vào lịch sử: ${widget.guide['name']}',
-                                    ),
-                                  ),
-                                );
-                              },
-                              child: const Text('Xác nhận'),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                      ],
-                    );
-                  },
-                ),
-              ),
-            );
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => GuideBookingPage(
+          guide: widget.guide,
+          onBooked: (booking) {
+            widget.onBooked?.call(booking);
           },
-        );
-      },
+        ),
+      ),
     );
   }
 
@@ -1449,212 +901,642 @@ class _ThuehuongdanvienDetailPageState
 
   @override
   Widget build(BuildContext context) {
-    final guide = widget.guide;
     return Scaffold(
-      appBar: AppBar(title: Text(guide['name'] as String)),
+      appBar: AppBar(title: Text(widget.guide['name'] ?? '')),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                CircleAvatar(
-                  radius: 36,
-                  backgroundImage: AssetImage(guide['avatar'] as String),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+            SizedBox(
+              height: 300,
+              child: ImageCarousel(
+                images:
+                    (widget.guide['images'] as List?)
+                        ?.map((e) => e.toString())
+                        .toList() ??
+                    [widget.guide['avatar'] as String],
+              ),
+            ),
+            Container(
+              margin: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.1),
+                    blurRadius: 10,
+                    offset: const Offset(0, 5),
+                  ),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        guide['name'] as String,
+                        widget.guide['name'] as String,
                         style: const TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.green.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.star,
+                              color: Colors.amber,
+                              size: 16,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              _rating.toStringAsFixed(1),
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.green,
+                              ),
+                            ),
+                            Text(
+                              ' ($_reviewCount)',
+                              style: const TextStyle(color: Colors.grey),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '${_fmtPrice(widget.guide['pricePerDay'] as num)}',
+                    style: const TextStyle(
+                      fontSize: 18,
+                      color: Colors.black,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if ((widget.guide['ownerId'] ?? '')
+                      .toString()
+                      .isNotEmpty) ...[
+                    FutureBuilder<DocumentSnapshot>(
+                      future: _ownerProfileFuture,
+                      builder: (context, snapshot) {
+                        if (!snapshot.hasData) return const SizedBox();
+                        final data =
+                            snapshot.data!.data() as Map<String, dynamic>?;
+                        if (data == null) return const SizedBox();
+
+                        final businessProfile =
+                            data['businessProfile'] as Map<String, dynamic>? ??
+                            {};
+                        final ownerProfile =
+                            data['ownerProfile'] as Map<String, dynamic>? ?? {};
+
+                        String _getValidString(
+                          List<String?> values,
+                          String defaultValue,
+                        ) {
+                          for (final v in values) {
+                            if (v != null && v.trim().isNotEmpty)
+                              return v.trim();
+                          }
+                          return defaultValue;
+                        }
+
+                        final storeName = _getValidString([
+                          businessProfile['name'] as String?,
+                          ownerProfile['name'] as String?,
+                          data['fullName'] as String?,
+                        ], 'Người đăng');
+
+                        final media =
+                            businessProfile['media'] as Map<String, dynamic>? ??
+                            {};
+                        final avatar = _getValidString([
+                          media['avatarPath'] as String?,
+                          media['avatar'] as String?,
+                          data['avatar'] as String?,
+                          data['photoURL'] as String?,
+                          data['photoUrl'] as String?,
+                        ], '');
+
+                        final address = _getValidString([
+                          businessProfile['address'] as String?,
+                        ], 'Người đăng');
+
+                        String displayAddress = address;
+                        if (address != 'Người đăng') {
+                          final parts = address
+                              .split(',')
+                              .map((e) => e.trim())
+                              .toList();
+                          if (parts.length >= 2) {
+                            displayAddress =
+                                '${parts[parts.length - 2]}, ${parts.last}';
+                          }
+                        }
+
+                        return ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: CircleAvatar(
+                            backgroundImage: avatar.isNotEmpty
+                                ? getImageProvider(avatar)
+                                : null,
+                            child: avatar.isEmpty
+                                ? const Icon(Icons.person)
+                                : null,
+                          ),
+                          title: Text(
+                            storeName,
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          subtitle: Text(
+                            displayAddress,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => BusinessProfilePage(
+                                  ownerId: widget.guide['ownerId'].toString(),
+                                ),
+                              ),
+                            );
+                          },
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  const Text(
+                    'Ngôn ngữ',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    children: (widget.guide['languages'] as List).map((l) {
+                      return Chip(
+                        label: Text(l.toString()),
+                        backgroundColor: Theme.of(
+                          context,
+                        ).colorScheme.primary.withOpacity(0.1),
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 20),
+                  const Text(
+                    'Kinh nghiệm',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    widget.guide['experience'] as String,
+                    style: const TextStyle(fontSize: 15, height: 1.5),
+                  ),
+                  const SizedBox(height: 20),
+                  const Text(
+                    'Lịch trình phù hợp',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    widget.guide['itineraryTips'] as String,
+                    style: const TextStyle(fontSize: 15, height: 1.5),
+                  ),
+                  const SizedBox(height: 24),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'Đánh giá',
+                        style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
-                      const SizedBox(height: 6),
-                      Wrap(
-                        spacing: 6,
-                        children: (guide['languages'] as List)
-                            .map<Widget>((l) => Chip(label: Text(l.toString())))
-                            .toList(),
+                      TextButton.icon(
+                        onPressed: _openWriteReviewSheet,
+                        icon: const Icon(Icons.edit, size: 18),
+                        label: const Text('Viết đánh giá'),
                       ),
                     ],
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'Đánh giá: ${_rating.toStringAsFixed(1)} • $_reviewCount review',
-              style: const TextStyle(color: Colors.grey),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'Kinh nghiệm',
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 6),
-            Text(guide['experience'] as String),
-            const SizedBox(height: 12),
-            Text(
-              'Gợi ý lịch trình',
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 6),
-            Text(guide['itineraryTips'] as String? ?? '-'),
-            const SizedBox(height: 12),
-            Text('Giá', style: const TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 6),
-            Text(
-              '${(guide['pricePerDay'] as double).toStringAsFixed(0)}k / ngày',
-              style: const TextStyle(
-                color: Colors.deepOrange,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Builder(
-              builder: (context) {
-                final bs = widget.bookings
-                    .where((b) => b['guideId'] == guide['id'])
-                    .toList();
-                if (bs.isEmpty) return const SizedBox.shrink();
-                final b = bs.last;
-                return Padding(
-                  padding: const EdgeInsets.only(top: 8.0, bottom: 8.0),
-                  child: Row(
-                    children: [
-                      const Icon(
-                        Icons.event_note,
-                        size: 16,
-                        color: Colors.blue,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Trạng thái đặt: ${b['status']}',
-                        style: const TextStyle(color: Colors.blue),
-                      ),
-                    ],
-                  ),
-                );
-              },
-            ),
-            const SizedBox(height: 12),
-            const Divider(),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Row(
-                  children: [
-                    const Text(
-                      'Đánh giá',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(width: 8),
-                    _buildStars(_rating),
-                    const SizedBox(width: 8),
-                    Text(
-                      '($_reviewCount)',
-                      style: const TextStyle(color: Colors.grey),
-                    ),
-                  ],
-                ),
-                TextButton(
-                  onPressed: _openWriteReviewSheet,
-                  child: const Text('Viết đánh giá'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            if (_reviews.isEmpty) ...[
-              const Text('Chưa có đánh giá nào.'),
-            ] else
-              ..._reviews.map((r) {
-                return Card(
-                  margin: const EdgeInsets.symmetric(vertical: 6),
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            CircleAvatar(
-                              child: Text(
-                                (r['author'] as String).substring(0, 1),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                  const SizedBox(height: 12),
+                  if (_reviews.isEmpty)
+                    const Text('Chưa có đánh giá nào.')
+                  else
+                    ..._reviews.map((r) {
+                      return Card(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
                                 children: [
-                                  Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Text(
-                                        r['author'] as String,
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                      _buildStars(
-                                        (r['rating'] as num).toDouble(),
-                                      ),
-                                    ],
+                                  CircleAvatar(
+                                    child: Text(
+                                      (r['author'] as String).substring(0, 1),
+                                    ),
                                   ),
-                                  const SizedBox(height: 8),
-                                  Text(r['text'] as String),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    r['date'] as String,
-                                    style: const TextStyle(
-                                      color: Colors.grey,
-                                      fontSize: 12,
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.spaceBetween,
+                                          children: [
+                                            Text(
+                                              r['author'] as String,
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                            _buildStars(
+                                              (r['rating'] as num).toDouble(),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 8),
+                                        Text(r['text'] as String),
+                                        const SizedBox(height: 8),
+                                        Text(
+                                          r['date'] as String,
+                                          style: const TextStyle(
+                                            color: Colors.grey,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
                                 ],
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
-                      ],
-                    ),
-                  ),
-                );
-              }),
+                      );
+                    }),
+                  const SizedBox(height: 80),
+                ],
+              ),
+            ),
           ],
         ),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
-      floatingActionButton: SizedBox(
-        width: MediaQuery.of(context).size.width - 48,
-        height: 56,
-        child: FloatingActionButton.extended(
-          onPressed: widget.guide['available'] == true
-              ? _openBookingSheet
-              : null,
-          label: Text(
-            'Đặt ngay',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-            ),
+      floatingActionButton:
+          (FirebaseAuth.instance.currentUser?.uid !=
+              (widget.guide['ownerId'] ?? '').toString())
+          ? SizedBox(
+              width: MediaQuery.of(context).size.width - 48,
+              height: 56,
+              child: FloatingActionButton.extended(
+                onPressed:
+                    _loadingBusy || _isBusy || widget.guide['available'] != true
+                    ? null
+                    : _openBookingSheet,
+                label: Text(
+                  _loadingBusy
+                      ? 'Đang kiểm tra...'
+                      : (_isBusy ? 'Đang bận' : 'Đặt ngay'),
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                backgroundColor: widget.guide['available'] == true
+                    ? Theme.of(context).colorScheme.primary
+                    : Colors.grey.shade400,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(32),
+                ),
+                elevation: 6,
+              ),
+            )
+          : null,
+    );
+  }
+}
+
+class _TourGuideSearchPage extends StatefulWidget {
+  const _TourGuideSearchPage();
+
+  @override
+  State<_TourGuideSearchPage> createState() => _TourGuideSearchPageState();
+}
+
+class _TourGuideSearchPageState extends State<_TourGuideSearchPage> {
+  final TextEditingController _searchController = TextEditingController();
+  List<Map<String, dynamic>> _allItems = [];
+  List<Map<String, dynamic>> _filtered = [];
+  List<String> _history = [];
+  bool _hasSubmitted = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadHistory();
+    _loadItems();
+    _searchController.addListener(_onSearchChanged);
+  }
+
+  String _fmtPrice(num val) {
+    final str = (val * 1000).toStringAsFixed(0);
+    return str.replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (m) => '.');
+  }
+
+  void _loadItems() {
+    FirebaseBusinessService()
+        .streamServices(collectionName: 'business_guide_services')
+        .listen((items) {
+          if (!mounted) return;
+          final guides = items.where((it) => it['status'] == 'active').map((
+            it,
+          ) {
+            final extra = it['extra'] as Map<String, dynamic>? ?? {};
+            return {
+              'id': it['id'],
+              'ownerId': it['ownerId'],
+              'name': it['name'] ?? 'Hướng dẫn viên',
+              'languages': extra['languages'] ?? ['Tiếng Việt'],
+              'rating': (extra['rating'] as num?)?.toDouble() ?? 0.0,
+              'pricePerDay': (it['price'] as num?)?.toDouble() ?? 0.0,
+              'experience': extra['experienceYears']?.toString() != null
+                  ? '${extra['experienceYears']} năm kinh nghiệm'
+                  : 'Hướng dẫn viên',
+              'avatar': extra['imageUrl'] ?? '',
+              'itineraryTips': extra['specialty'] ?? '',
+              'reviews': (extra['reviews'] as num?)?.toInt() ?? 0,
+            };
+          }).toList();
+          setState(() {
+            _allItems = guides;
+            _applyFilters();
+          });
+        });
+  }
+
+  void _onSearchChanged() {
+    if (_searchController.text.isEmpty && _hasSubmitted) {
+      _hasSubmitted = false;
+    }
+    _applyFilters();
+  }
+
+  void _submitSearch(String query) {
+    if (query.trim().isEmpty) return;
+    _saveHistory(query);
+    setState(() {
+      _hasSubmitted = true;
+    });
+  }
+
+  Future<void> _loadHistory() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) {
+      setState(() {
+        _history = prefs.getStringList('guide_search_history') ?? [];
+      });
+    }
+  }
+
+  Future<void> _saveHistory(String query) async {
+    final prefs = await SharedPreferences.getInstance();
+    _history.remove(query);
+    _history.insert(0, query);
+    if (_history.length > 10) _history = _history.sublist(0, 10);
+    await prefs.setStringList('guide_search_history', _history);
+    if (mounted) setState(() {});
+  }
+
+  void _clearHistory() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('guide_search_history');
+    if (mounted) setState(() => _history.clear());
+  }
+
+  void _applyFilters() {
+    final q = _searchController.text.trim().toLowerCase();
+    setState(() {
+      _filtered = _allItems.where((it) {
+        final matchQ =
+            q.isEmpty ||
+            it['name'].toString().toLowerCase().contains(q) ||
+            (it['languages'] as List).any(
+              (l) => l.toString().toLowerCase().contains(q),
+            );
+        return matchQ;
+      }).toList();
+    });
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.grey[50],
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        iconTheme: const IconThemeData(color: Colors.black87),
+        title: TextField(
+          controller: _searchController,
+          autofocus: true,
+          decoration: InputDecoration(
+            hintText: 'Tìm tên hoặc ngôn ngữ...',
+            hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 15),
+            border: InputBorder.none,
+            suffixIcon: _searchController.text.isNotEmpty
+                ? IconButton(
+                    icon: const Icon(Icons.clear, color: Colors.grey, size: 20),
+                    onPressed: () {
+                      _searchController.clear();
+                      setState(() => _hasSubmitted = false);
+                    },
+                  )
+                : null,
           ),
-          backgroundColor: widget.guide['available'] == true
-              ? Theme.of(context).colorScheme.primary
-              : Colors.grey.shade400,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(32),
-          ),
-          elevation: 6,
+          onSubmitted: _submitSearch,
+          textInputAction: TextInputAction.search,
         ),
+      ),
+      body: Column(
+        children: [
+          Container(height: 1, color: Colors.grey.shade200),
+          if (!_hasSubmitted &&
+              _searchController.text.isEmpty &&
+              _history.isNotEmpty)
+            Expanded(
+              child: ListView(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'Tìm kiếm gần đây',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 15,
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: _clearHistory,
+                          child: const Text('Xóa lịch sử'),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Wrap(
+                    spacing: 8,
+                    children: _history.map((h) {
+                      return ActionChip(
+                        label: Text(h),
+                        onPressed: () {
+                          _searchController.text = h;
+                          _submitSearch(h);
+                        },
+                      );
+                    }).toList(),
+                  ),
+                ],
+              ),
+            )
+          else if (_filtered.isEmpty)
+            Expanded(
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.search_off,
+                      size: 64,
+                      color: Colors.grey.shade300,
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Không tìm thấy hướng dẫn viên nào',
+                      style: TextStyle(color: Colors.grey.shade600),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          else
+            Expanded(
+              child: ListView.separated(
+                padding: const EdgeInsets.all(12),
+                itemCount: _filtered.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 12),
+                itemBuilder: (context, index) {
+                  final g = _filtered[index];
+                  return Card(
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    elevation: 2,
+                    shadowColor: Colors.black12,
+                    child: ListTile(
+                      contentPadding: const EdgeInsets.all(12),
+                      leading: CircleAvatar(
+                        radius: 30,
+                        backgroundImage: g['avatar'].toString().isNotEmpty
+                            ? NetworkImage(g['avatar'])
+                            : null,
+                        child: g['avatar'].toString().isEmpty
+                            ? const Icon(Icons.person)
+                            : null,
+                      ),
+                      title: Text(
+                        g['name'],
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const SizedBox(height: 4),
+                          Text(g['experience']),
+                          const SizedBox(height: 4),
+                          Text(
+                            (g['languages'] as List).join(' • '),
+                            style: const TextStyle(color: Colors.blue),
+                          ),
+                        ],
+                      ),
+                      trailing: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.star,
+                                color: Colors.amber,
+                                size: 16,
+                              ),
+                              const SizedBox(width: 4),
+                              Text('${g['rating']} (${g['reviews']})'),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '${_fmtPrice(g['pricePerDay'] as num)}',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black,
+                            ),
+                          ),
+                        ],
+                      ),
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => BusinessProfilePage(
+                              ownerId: g['ownerId'].toString(),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  );
+                },
+              ),
+            ),
+        ],
       ),
     );
   }

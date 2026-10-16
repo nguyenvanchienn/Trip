@@ -14,11 +14,11 @@ class Thanhtoanvachiase extends StatelessWidget {
           onTap ??
           () {
             Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const ThanhToanVaChiaSePage()),
+              MaterialPageRoute(builder: (_) => const ThanhtoanvachiasePage()),
             );
           },
-      icon: const Icon(Icons.payments_outlined, size: 36, color: Colors.brown),
-      label: 'Thanh toán và chia tiền',
+      icon: const Icon(Icons.group, size: 36, color: Colors.green),
+      label: 'Thanh toán và chia sẻ',
     );
   }
 }

@@ -1,25 +1,14 @@
 import 'package:flutter/material.dart';
-import 'package:tourn/Ui/main/category/menu/pages/Menu_drawer.dart';
 import 'package:tourn/Ui/main/category/menu/pages/Menu_page.dart';
 
 class Menu extends StatelessWidget {
-  const Menu({super.key});
+  final MenuPageController? controller;
+
+  const Menu({super.key, this.controller});
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        scaffoldBackgroundColor: Color(0xFFF5F5F3),
-        appBarTheme: AppBarTheme(
-          backgroundColor: Color(0xFFF5F5F3),
-          foregroundColor: Color(0xFF113953), // Màu chữ trên AppBar
-        ),
-      ),
-      routes: {
-        "/": (context) => MenuPage(),
-        "/menudrawer": (context) => MenuDrawer(),
-      },
-    );
+    // direct page; navigation (if any) via root navigator
+    return MenuPage(controller: controller);
   }
 }

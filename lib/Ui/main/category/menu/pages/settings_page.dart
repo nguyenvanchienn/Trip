@@ -1,7 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:tourn/Ui/main/category/menu/pages/Help.dart';
+
+import 'package:tourn/Ui/main/category/menu/widgets/Settings/Guiphanhoi.dart';
 import 'package:tourn/Ui/main/category/menu/widgets/Settings/Security.dart';
-import 'package:tourn/Ui/main/category/menu/widgets/Settings/Security/two_factor_page.dart';
 import 'package:tourn/Ui/main/category/menu/widgets/Settings/account_management.dart';
+import 'package:tourn/Ui/main/category/menu/widgets/Settings/hoatdongcuaban.dart';
+import 'package:tourn/Ui/main/category/menu/widgets/Settings/introapp.dart';
+import 'package:tourn/Ui/main/category/menu/widgets/Settings/quyenriengtuvaantoan.dart';
+import 'package:tourn/Ui/main/category/menu/widgets/Settings/thongtindangnhapdaluu.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -12,10 +18,9 @@ class SettingsPage extends StatefulWidget {
 
 class _SettingsPageState extends State<SettingsPage> {
   final bool _pushNotifications = true;
-  final bool _allowComments = true;
+
   final bool _recommendation = true;
   final bool _darkMode = false;
-  final bool _activityStatus = true; // Trạng thái hoạt động
 
   @override
   void initState() {
@@ -161,53 +166,31 @@ class _SettingsPageState extends State<SettingsPage> {
             title: 'Quyền riêng tư & an toàn',
             subtitle: 'Ai có thể xem/ứng xử với bạn',
             onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Mở Quyền riêng tư...')),
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const Quyenriengtuvaantoan()),
               );
             },
-          ),
-          _tile(
-            icon: Icons.comment_bank_outlined,
-            title: 'Bình luận',
-            subtitle: 'Cho phép/khóa bình luận',
-            trailing: Switch(value: _allowComments, onChanged: (v) {}),
-            onTap: () {},
           ),
 
           const SizedBox(height: 8),
 
           // Content & activity
           _sectionHeader('Nội dung & hoạt động'),
-          _tile(
-            icon: Icons.privacy_tip_outlined,
-            title: 'Quyền riêng tư của tài khoản',
-            onTap: () => _openPage(
-              'Quyền riêng tư của tài khoản',
-              'Cài đặt quyền riêng tư.',
-            ),
-          ),
-          _tile(
-            icon: Icons.repeat,
-            title: 'Follow & tương tác',
-            onTap: () => _openPage('Follow & tương tác', 'Cài đặt tương tác.'),
-          ),
+
           _tile(
             icon: Icons.recommend_outlined,
             title: 'Gợi ý nội dung',
             trailing: Switch(value: _recommendation, onChanged: (v) {}),
             onTap: () {},
           ),
-          _tile(icon: Icons.block_outlined, title: 'Chặn', onTap: () {}),
           _tile(
             icon: Icons.history_outlined,
             title: 'Hoạt động của bạn',
-            onTap: () {},
-          ),
-          _tile(
-            icon: Icons.visibility_outlined,
-            title: 'Trạng thái hoạt động',
-            trailing: Switch(value: _activityStatus, onChanged: (v) {}),
-            onTap: () {},
+            onTap: () {
+              Navigator.of(
+                context,
+              ).push(MaterialPageRoute(builder: (_) => const Hoatdongcuaban()));
+            },
           ),
 
           const SizedBox(height: 8),
@@ -227,8 +210,10 @@ class _SettingsPageState extends State<SettingsPage> {
             icon: Icons.vpn_key_outlined,
             title: 'Thông tin đăng nhập đã lưu',
             onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Thông tin đăng nhập đã lưu')),
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const Thongtindangnhapdaluu(),
+                ),
               );
             },
           ),
@@ -246,8 +231,9 @@ class _SettingsPageState extends State<SettingsPage> {
             icon: Icons.help_outline,
             title: 'Trung tâm trợ giúp',
             onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Mở Trung tâm trợ giúp...')),
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => Help()),
               );
             },
           ),
@@ -255,8 +241,9 @@ class _SettingsPageState extends State<SettingsPage> {
             icon: Icons.feedback_outlined,
             title: 'Gửi phản hồi',
             onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Mở Gửi phản hồi...')),
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => Guiphanhoi()),
               );
             },
           ),
@@ -265,9 +252,9 @@ class _SettingsPageState extends State<SettingsPage> {
             title: 'Giới thiệu',
             subtitle: 'Phiên bản ứng dụng',
             onTap: () {
-              ScaffoldMessenger.of(
+              Navigator.of(
                 context,
-              ).showSnackBar(const SnackBar(content: Text('Mở Giới thiệu...')));
+              ).push(MaterialPageRoute(builder: (_) => const IntroAppPage()));
             },
           ),
 

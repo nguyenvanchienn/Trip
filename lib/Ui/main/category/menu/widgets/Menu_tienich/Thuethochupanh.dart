@@ -10,6 +10,7 @@ class Thuethochupanh extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MenuItemTile(
+      collectionName: 'business_photographer_services',
       onTap:
           onTap ??
           () {

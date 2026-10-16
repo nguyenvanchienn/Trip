@@ -8,8 +8,19 @@ import 'dart:math';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+class MapPageController {
+  Future<void> Function()? _recenter;
+
+  Future<void> recenterToCurrentLocation() async {
+    await _recenter?.call();
+  }
+}
+
 class mappage extends StatefulWidget {
-  const mappage({super.key});
+  final String? initialDestination;
+  final MapPageController? controller;
+
+  const mappage({super.key, this.initialDestination, this.controller});
 
   @override
   State<mappage> createState() => _mappageState();
@@ -38,7 +49,10 @@ class _mappageState extends State<mappage> {
       []; // Danh sách các tuyến đường
   int _selectedRouteIndex = 0; // Tuyến đường được chọn
   bool _isNavigating = false;
-  StreamSubscription<Position>? _positionStreamSubscription;
+
+  // Separate subscriptions so we can keep updating location when not navigating.
+  StreamSubscription<Position>? _locationSubscription;
+  StreamSubscription<Position>? _navigationSubscription;
   bool _showAirQuality = false;
   bool _showFloodLayer = false;
   bool _showTrafficLayer = false;
@@ -284,11 +298,19 @@ class _mappageState extends State<mappage> {
   @override
   void initState() {
     super.initState();
+    widget.controller?._recenter = _recenterToCurrentLocation;
     _loadSearchHistory();
-    // Gọi async mà không await để không block UI
-    Future.delayed(Duration(milliseconds: 500), () {
-      _getCurrentLocation();
-    });
+    // kick off location fetching right away
+    _initLocation();
+
+    // nếu có destination ban đầu thì tìm kiếm
+    if (widget.initialDestination != null &&
+        widget.initialDestination!.isNotEmpty) {
+      _searchInitialDestination(widget.initialDestination!);
+    }
+
+    // start stream to keep _currentLocation up to date even when not navigating
+    _startLocationStream();
 
     // Add listeners to cancel picking mode when focusing text fields
     _originFocusNode.addListener(() {
@@ -310,57 +332,156 @@ class _mappageState extends State<mappage> {
     });
   }
 
-  Future<void> _getCurrentLocation() async {
+  Future<void> _recenterToCurrentLocation() async {
+    if (_currentLocation == null) {
+      await _getCurrentLocation();
+    }
+    if (!mounted || _currentLocation == null) return;
+
+    setState(() {
+      _isUserInteracting = false;
+    });
+    if (_isNavigating) {
+      _mapController.moveAndRotate(
+        _currentLocation!,
+        _currentZoom,
+        -_mapRotation,
+      );
+    } else {
+      _mapController.move(_currentLocation!, 15.0);
+    }
+  }
+
+  Future<void> _searchInitialDestination(String query) async {
     try {
-      // Kiểm tra dịch vụ GPS có bật không
-      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (!serviceEnabled) {
-        // Dịch vụ GPS chưa bật
-        return;
-      }
+      String urlString =
+          'https://nominatim.openstreetmap.org/search?'
+          'q=$query&'
+          'format=json&'
+          'limit=1&'
+          'addressdetails=1&'
+          'countrycodes=vn&'
+          'accept-language=vi';
 
-      // Kiểm tra quyền truy cập vị trí
-      LocationPermission permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-        if (permission == LocationPermission.denied) {
-          return;
-        }
-      }
-
-      if (permission == LocationPermission.deniedForever) {
-        return;
-      }
-
-      // Lấy vị trí hiện tại với độ chính xác cao nhất
-      Position position = await Geolocator.getCurrentPosition(
-        locationSettings: LocationSettings(
-          accuracy: LocationAccuracy.bestForNavigation,
-          distanceFilter: 5, // Cập nhật khi di chuyển 5m
-        ),
+      final url = Uri.parse(urlString);
+      final response = await http.get(
+        url,
+        headers: {
+          'User-Agent': 'TournApp/1.0',
+          'Accept-Language': 'vi,en;q=0.9',
+        },
       );
 
-      if (mounted) {
-        setState(() {
-          _currentCenter = LatLng(position.latitude, position.longitude);
-          _currentLocation = _currentCenter;
-          // Đặt điểm đi là vị trí hiện tại
-          if (_origin == null) {
-            _origin = _currentCenter;
-            _originController.text = 'Vị trí hiện tại';
-          }
-        });
-
-        // Di chuyển đến vị trí hiện tại
-        if (_isNavigating) {
-          // Khi đang điều hướng, giữ góc xoay và mức zoom
-          _mapController.moveAndRotate(_currentCenter, 18.0, -_mapRotation);
-        } else {
-          _mapController.move(_currentCenter, 15.0);
+      if (response.statusCode == 200) {
+        final List results = json.decode(response.body);
+        if (results.isNotEmpty && mounted) {
+          final result = results[0];
+          final suggestion = {
+            'display_name': result['display_name'] as String,
+            'lat': result['lat'] as String,
+            'lon': result['lon'] as String,
+          };
+          _selectDestinationSuggestion(suggestion);
         }
       }
     } catch (e) {
-      // Không lấy được GPS
+      print('Lỗi tìm kiếm địa điểm: $e');
+    }
+  }
+
+  /// Try to acquire the current device location once and update state.
+  Future<void> _getCurrentLocation() async {
+    try {
+      // ensure service and permission
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) return;
+
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever)
+        return;
+
+      Position position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.bestForNavigation,
+          distanceFilter: 5,
+        ),
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _currentCenter = LatLng(position.latitude, position.longitude);
+        _currentLocation = _currentCenter;
+        if (_origin == null) {
+          _origin = _currentCenter;
+          _originController.text = 'Vị trí hiện tại';
+        }
+      });
+
+      if (_isNavigating) {
+        _mapController.moveAndRotate(_currentCenter, 18.0, -_mapRotation);
+      } else {
+        _mapController.move(_currentCenter, 15.0);
+      }
+    } catch (e) {
+      // ignore errors
+    }
+  }
+
+  /// Called during initState to make an initial location request
+  /// and update the UI even before the user interacts with the map.
+  Future<void> _initLocation() async {
+    await _getCurrentLocation();
+  }
+
+  /// Keeps listening to position changes and updates [_currentLocation]
+  /// when not navigating. This helps the map reflect the real location
+  /// immediately as soon as the device moves.
+  Future<void> _startLocationStream() async {
+    try {
+      // Check permission before starting stream
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) return;
+
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        return; // Don't start stream if permission denied
+      }
+
+      const settings = LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 10,
+      );
+      // cancel any existing stream
+      _locationSubscription?.cancel();
+      _locationSubscription =
+          Geolocator.getPositionStream(locationSettings: settings).listen(
+            (pos) {
+              if (!mounted) return;
+              final newLoc = LatLng(pos.latitude, pos.longitude);
+              setState(() {
+                _currentLocation = newLoc;
+                _currentCenter = newLoc;
+              });
+              if (!_isNavigating) {
+                _mapController.move(_currentCenter, _currentZoom);
+              }
+            },
+            onError: (error) {
+              // Ignore location errors (permission denied, service disabled, etc.)
+              debugPrint('Location stream error: $error');
+            },
+          );
+    } catch (e) {
+      // Ignore any errors during stream setup
+      debugPrint('Failed to start location stream: $e');
     }
   }
 
@@ -1158,40 +1279,49 @@ class _mappageState extends State<mappage> {
         distanceFilter: 5, // More sensitive to movement
       );
 
-      _positionStreamSubscription =
+      _navigationSubscription =
           Geolocator.getPositionStream(
             locationSettings: locationSettings,
-          ).listen((Position position) {
-            if (mounted && _isNavigating && _destination != null) {
-              final newLocation = LatLng(position.latitude, position.longitude);
-
-              // Calculate remaining distance and update route
-              _updateNavigationProgress(newLocation);
-
-              // Calculate bearing from current position TO destination
-              double bearing = _calculateBearing(newLocation, _destination!);
-
-              // Use device heading if moving fast enough (more accurate)
-              if (position.heading >= 0 && position.speed > 0.5) {
-                bearing = position.heading;
-              }
-
-              setState(() {
-                _currentLocation = newLocation;
-                _currentCenter = newLocation;
-                _mapRotation = bearing;
-              });
-
-              // Chỉ di chuyển camera nếu người dùng không đang tương tác
-              if (!_isUserInteracting) {
-                _mapController.moveAndRotate(
-                  newLocation,
-                  _currentZoom,
-                  -bearing,
+          ).listen(
+            (Position position) {
+              if (mounted && _isNavigating && _destination != null) {
+                final newLocation = LatLng(
+                  position.latitude,
+                  position.longitude,
                 );
+
+                // Calculate remaining distance and update route
+                _updateNavigationProgress(newLocation);
+
+                // Calculate bearing from current position TO destination
+                double bearing = _calculateBearing(newLocation, _destination!);
+
+                // Use device heading if moving fast enough (more accurate)
+                if (position.heading >= 0 && position.speed > 0.5) {
+                  bearing = position.heading;
+                }
+
+                setState(() {
+                  _currentLocation = newLocation;
+                  _currentCenter = newLocation;
+                  _mapRotation = bearing;
+                });
+
+                // Chỉ di chuyển camera nếu người dùng không đang tương tác
+                if (!_isUserInteracting) {
+                  _mapController.moveAndRotate(
+                    newLocation,
+                    _currentZoom,
+                    -bearing,
+                  );
+                }
               }
-            }
-          });
+            },
+            onError: (error) {
+              // Handle location errors gracefully during navigation
+              debugPrint('Navigation stream error: $error');
+            },
+          );
     }
   }
 
@@ -1205,8 +1335,9 @@ class _mappageState extends State<mappage> {
       _lastRerouteTime = null; // Reset reroute timer
       _isRerouting = false;
     });
-    _positionStreamSubscription?.cancel();
-    _positionStreamSubscription = null;
+    // stop only navigation-specific stream, keep the general location stream alive
+    _navigationSubscription?.cancel();
+    _navigationSubscription = null;
     _navigationUpdateTimer?.cancel();
     _navigationUpdateTimer = null;
 
@@ -2320,13 +2451,15 @@ class _mappageState extends State<mappage> {
 
   @override
   void dispose() {
+    widget.controller?._recenter = null;
     _debounceTimer?.cancel();
     _navigationUpdateTimer?.cancel();
     _originController.dispose();
     _destinationController.dispose();
     _originFocusNode.dispose();
     _destinationFocusNode.dispose();
-    _positionStreamSubscription?.cancel();
+    _locationSubscription?.cancel();
+    _navigationSubscription?.cancel();
     super.dispose();
   }
 }

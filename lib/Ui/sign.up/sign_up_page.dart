@@ -39,7 +39,8 @@ class signuppage extends StatelessWidget {
 
 class _RegistrationFormPageState extends State<RegistrationFormPage> {
   // Controllers
-  final TextEditingController _nameCtrl = TextEditingController();
+  final TextEditingController _hoCtrl = TextEditingController(); // Họ
+  final TextEditingController _tenCtrl = TextEditingController(); // Tên
   final TextEditingController _emailPhoneCtrl =
       TextEditingController(); // Controller cho email hoặc số điện thoại
   final TextEditingController _passwordCtrl = TextEditingController();
@@ -67,7 +68,8 @@ class _RegistrationFormPageState extends State<RegistrationFormPage> {
   bool _confirmPasswordObscured = true;
 
   // Các biến lỗi
-  String? _nameError;
+  String? _hoError;
+  String? _tenError;
   String? _passwordError;
   String? _confirmPasswordError;
   String? _otpError;
@@ -212,7 +214,8 @@ class _RegistrationFormPageState extends State<RegistrationFormPage> {
     );
 
     // Thêm listener để validate form
-    _nameCtrl.addListener(_validateForm);
+    _hoCtrl.addListener(_validateForm);
+    _tenCtrl.addListener(_validateForm);
     _emailPhoneCtrl.addListener(_validateForm);
     _passwordCtrl.addListener(_validateForm);
     _confirmPasswordCtrl.addListener(_validateForm);
@@ -229,7 +232,8 @@ class _RegistrationFormPageState extends State<RegistrationFormPage> {
 
   @override
   void dispose() {
-    _nameCtrl.dispose();
+    _hoCtrl.dispose();
+    _tenCtrl.dispose();
     _emailPhoneCtrl.dispose();
     _passwordCtrl.dispose();
     _confirmPasswordCtrl.dispose();
@@ -240,16 +244,40 @@ class _RegistrationFormPageState extends State<RegistrationFormPage> {
 
   // Hàm validate form
   void _validateForm() {
-    final name = _nameCtrl.text.trim();
+    final ho = _hoCtrl.text.trim();
+    final ten = _tenCtrl.text.trim();
     final emailPhoneInput = _emailPhoneCtrl.text.trim();
     final password = _passwordCtrl.text.trim();
     final confirmPassword = _confirmPasswordCtrl.text.trim();
     final otp = otpCtrl.text.trim();
-    String? nameErr;
+    String? hoErr;
+    String? tenErr;
     String? accountErr;
     String? passwordErr;
     String? confirmErr;
     String? otpErr;
+
+    // Regex cho tên tiếng Việt (chữ cái có dấu, không có số và ký tự đặc biệt)
+    // Bao gồm tất cả các ký tự tiếng Việt với dấu
+    final nameRegex = RegExp(r'^[a-zA-ZàáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđÀÁẠẢÃÂẦẤẬẨẪĂẰẮẶẲẴÈÉẸẺẼÊỀẾỆỂỄÌÍỊỈĨÒÓỌỎÕÔỒỐỘỔỖƠỜỚỢỞỠÙÚỤỦŨƯỪỨỰỬỮỲÝỴỶỸĐ\s]+$');
+
+    // Validate Họ
+    if (ho.isNotEmpty) {
+      if (ho.length < 2) {
+        hoErr = 'Họ phải có ít nhất 2 ký tự';
+      } else if (!nameRegex.hasMatch(ho)) {
+        hoErr = 'Họ không được chứa số hoặc ký tự đặc biệt';
+      }
+    }
+
+    // Validate Tên
+    if (ten.isNotEmpty) {
+      if (ten.length < 2) {
+        tenErr = 'Tên phải có ít nhất 2 ký tự';
+      } else if (!nameRegex.hasMatch(ten)) {
+        tenErr = 'Tên không được chứa số hoặc ký tự đặc biệt';
+      }
+    }
 
     // Validate account (email hoặc SĐT)
     final accountValue = emailPhoneInput.isNotEmpty
@@ -283,7 +311,12 @@ class _RegistrationFormPageState extends State<RegistrationFormPage> {
     }
 
     bool isValid =
-        name.isNotEmpty &&
+        ho.isNotEmpty &&
+        ho.length >= 2 &&
+        hoErr == null &&
+        ten.isNotEmpty &&
+        ten.length >= 2 &&
+        tenErr == null &&
         accountErr == null &&
         password.isNotEmpty &&
         password.length >= 6 &&
@@ -293,7 +326,8 @@ class _RegistrationFormPageState extends State<RegistrationFormPage> {
         _isValidOTP(otp);
 
     setState(() {
-      _nameError = nameErr;
+      _hoError = hoErr;
+      _tenError = tenErr;
       _accountError = accountErr;
       _passwordError = passwordErr;
       _confirmPasswordError = confirmErr;
@@ -332,7 +366,9 @@ class _RegistrationFormPageState extends State<RegistrationFormPage> {
                 const SizedBox(height: 24),
 
                 // Form nhập thông tin
-                _buildNameField(),
+                _buildHoField(),
+                const SizedBox(height: 16),
+                _buildTenField(),
                 const SizedBox(height: 16),
                 _buildemailandsdtField(),
                 const SizedBox(height: 16),
@@ -401,14 +437,25 @@ class _RegistrationFormPageState extends State<RegistrationFormPage> {
     );
   }
 
-  // Widget trường nhập tên
-  Widget _buildNameField() {
+  // Widget trường nhập họ
+  Widget _buildHoField() {
     return _buildTextField(
-      label: 'Họ và tên',
-      hint: 'Nhập họ và tên của bạn',
-      controller: _nameCtrl,
+      label: 'Họ',
+      hint: 'Nhập họ của bạn',
+      controller: _hoCtrl,
       icon: Icons.person,
-      errorText: _nameError,
+      errorText: _hoError,
+    );
+  }
+
+  // Widget trường nhập tên
+  Widget _buildTenField() {
+    return _buildTextField(
+      label: 'Tên',
+      hint: 'Nhập tên của bạn',
+      controller: _tenCtrl,
+      icon: Icons.person_outline,
+      errorText: _tenError,
     );
   }
 
@@ -855,8 +902,10 @@ class _RegistrationFormPageState extends State<RegistrationFormPage> {
     _validateForm();
 
     String message = 'Vui lòng kiểm tra thông tin đăng ký.';
-    if (_nameCtrl.text.trim().isEmpty) {
-      message = 'Vui lòng nhập họ và tên.';
+    if (_hoCtrl.text.trim().isEmpty) {
+      message = 'Vui lòng nhập họ.';
+    } else if (_tenCtrl.text.trim().isEmpty) {
+      message = 'Vui lòng nhập tên.';
     } else if (_accountError != null) {
       message = _accountError!;
     } else if (_passwordError != null) {
@@ -889,7 +938,7 @@ class _RegistrationFormPageState extends State<RegistrationFormPage> {
         context,
         MaterialPageRoute(
           builder: (context) => CCCDVerificationPage(
-            name: _nameCtrl.text.trim(),
+            name: '${_hoCtrl.text.trim()} ${_tenCtrl.text.trim()}',
             emailOrPhone: accountValue,
             password: password,
           ),

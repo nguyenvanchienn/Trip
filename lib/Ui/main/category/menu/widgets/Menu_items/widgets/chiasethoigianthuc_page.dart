@@ -1,10 +1,21 @@
 import 'dart:async';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class ChiaSeThoiGianThucPage extends StatefulWidget {
-  const ChiaSeThoiGianThucPage({super.key});
+  /// When [sessionId] is provided the page acts as a viewer; otherwise
+  /// the page is a host that can start/stop sharing and will create a
+  /// session in Firestore.
+  const ChiaSeThoiGianThucPage({super.key, this.sessionId});
+
+  final String? sessionId;
 
   @override
   State<ChiaSeThoiGianThucPage> createState() => _ChiaSeThoiGianThucPageState();
@@ -12,38 +23,192 @@ class ChiaSeThoiGianThucPage extends StatefulWidget {
 
 class _ChiaSeThoiGianThucPageState extends State<ChiaSeThoiGianThucPage> {
   bool _isSharing = false;
-  Timer? _timer;
-  double _lat = 10.762622;
+  StreamSubscription<Position>? _positionSubscription;
+  StreamSubscription<DocumentSnapshot>? _sessionSubscription;
+  StreamSubscription<QuerySnapshot>? _viewersSubscription;
+
+  double _lat = 10.762622; // will be replaced by real location on init
   double _lng = 106.660172;
   DateTime? _lastUpdated;
-  final List<String> _viewers = ['An', 'Bình', 'Chi'];
-  final String _shareLink = 'https://trip.app/share/abc123';
 
-  void _startSharing() {
+  /// request permission and try to read the current location once
+  Future<void> _initLocation() async {
+    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) return;
+
+    LocationPermission permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+    if (permission == LocationPermission.denied ||
+        permission == LocationPermission.deniedForever) {
+      return;
+    }
+
+    try {
+      final p = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.bestForNavigation,
+        ),
+      );
+      if (!mounted) return;
+      setState(() {
+        _lat = p.latitude;
+        _lng = p.longitude;
+        _lastUpdated = DateTime.now();
+      });
+      _mapController.move(LatLng(_lat, _lng), 13.0);
+    } catch (_) {}
+  }
+
+  final List<String> _viewers = [];
+
+  String? _sessionId;
+  String _shareLink = '';
+
+  static const _prefsKey = 'realtime_share_session';
+
+  // map controller for displaying current position
+  final MapController _mapController = MapController();
+
+  bool get _isViewer => widget.sessionId != null;
+
+  Future<void> _startSharing() async {
+    // ensure location permission
+    var perm = await Geolocator.checkPermission();
+    if (perm == LocationPermission.denied) {
+      perm = await Geolocator.requestPermission();
+    }
+    if (perm == LocationPermission.denied ||
+        perm == LocationPermission.deniedForever) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Không có quyền truy cập vị trí')),
+        );
+      }
+      return;
+    }
+
     setState(() {
       _isSharing = true;
       _lastUpdated = DateTime.now();
     });
-    _timer?.cancel();
-    _timer = Timer.periodic(const Duration(seconds: 2), (_) {
-      if (!mounted) return;
+
+    // try to grab immediate current location so session starts with accurate coords
+    try {
+      final p = await Geolocator.getCurrentPosition();
+      if (mounted) {
+        setState(() {
+          _lat = p.latitude;
+          _lng = p.longitude;
+          _lastUpdated = DateTime.now();
+        });
+        _mapController.move(LatLng(_lat, _lng), 13.0);
+      }
+    } catch (_) {}
+
+    // create a Firestore session document and remember its id
+    final doc = await FirebaseFirestore.instance
+        .collection('location_shares')
+        .add({
+          'lat': _lat,
+          'lng': _lng,
+          'lastUpdated': FieldValue.serverTimestamp(),
+        });
+    _sessionId = doc.id;
+    _shareLink = 'https://trip.app/share/$_sessionId';
+    // persist so leaving the page doesn't drop the session
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_prefsKey, _sessionId!);
+
+    // start listening for viewers joining
+    _viewersSubscription = FirebaseFirestore.instance
+        .collection('location_shares')
+        .doc(_sessionId)
+        .collection('viewers')
+        .snapshots()
+        .listen((snap) {
+          if (mounted) {
+            setState(() {
+              _viewers.clear();
+              _viewers.addAll(
+                snap.docs.map((d) => d.data()['name'] as String? ?? d.id),
+              );
+            });
+          }
+        });
+
+    // start receiving position updates
+    _positionSubscription?.cancel();
+    _positionSubscription =
+        Geolocator.getPositionStream(
+          locationSettings: const LocationSettings(
+            distanceFilter: 5,
+            // You can adjust accuracy or other options here if needed
+          ),
+        ).listen(
+          (Position pos) {
+            if (!mounted) return;
+            setState(() {
+              _lat = pos.latitude;
+              _lng = pos.longitude;
+              _lastUpdated = DateTime.now();
+            });
+            // move map so host sees current position immediately
+            _mapController.move(LatLng(_lat, _lng), 13.0);
+            // push update to Firestore
+            if (_sessionId != null) {
+              FirebaseFirestore.instance
+                  .collection('location_shares')
+                  .doc(_sessionId)
+                  .set({
+                    'lat': _lat,
+                    'lng': _lng,
+                    'lastUpdated': FieldValue.serverTimestamp(),
+                  }, SetOptions(merge: true));
+            }
+          },
+          onError: (error) {
+            // Handle location permission errors gracefully
+            debugPrint('Position stream error: $error');
+          },
+        );
+
+    // also grab one immediate position
+    try {
+      final p = await Geolocator.getCurrentPosition();
+      if (mounted) {
+        setState(() {
+          _lat = p.latitude;
+          _lng = p.longitude;
+          _lastUpdated = DateTime.now();
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _stopSharing() async {
+    _positionSubscription?.cancel();
+    _positionSubscription = null;
+    _viewersSubscription?.cancel();
+    _viewersSubscription = null;
+    // forget persisted session id
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_prefsKey);
+    if (mounted) {
       setState(() {
-        _lat += 0.00012;
-        _lng += 0.00008;
-        _lastUpdated = DateTime.now();
+        _isSharing = false;
       });
-    });
+    }
   }
 
-  void _stopSharing() {
-    _timer?.cancel();
-    _timer = null;
-    setState(() {
-      _isSharing = false;
-    });
+  void _toggleSharing() {
+    if (_isSharing) {
+      _stopSharing();
+    } else {
+      _startSharing();
+    }
   }
-
-  void _toggleSharing() => _isSharing ? _stopSharing() : _startSharing();
 
   Future<void> _copyLink() async {
     await Clipboard.setData(ClipboardData(text: _shareLink));
@@ -54,6 +219,8 @@ class _ChiaSeThoiGianThucPageState extends State<ChiaSeThoiGianThucPage> {
   }
 
   Future<void> _invite() async {
+    // don't need to persist anything; invites only make sense when
+    // sharing is active, so nothing extra to do here.
     final nameController = TextEditingController();
     final res = await showDialog<String?>(
       context: context,
@@ -87,8 +254,126 @@ class _ChiaSeThoiGianThucPageState extends State<ChiaSeThoiGianThucPage> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    // if we previously started sharing and haven't stopped, restore
+    _restoreSession();
+
+    if (!_isViewer) {
+      // get a one‑time fix so initial UI shows correct coords
+      _initLocation();
+    }
+
+    if (_isViewer) {
+      _attachAsViewer();
+    }
+  }
+
+  /// restore a previously persisted session if available
+  Future<void> _restoreSession() async {
+    if (_isViewer) return;
+    final prefs = await SharedPreferences.getInstance();
+    final id = prefs.getString(_prefsKey);
+    if (id != null) {
+      // we were sharing previously, so resume
+      _sessionId = id;
+      _shareLink = 'https://trip.app/share/$_sessionId';
+      setState(() {
+        _isSharing = true;
+      });
+      // start the viewers listener and position stream like in _startSharing
+      _viewersSubscription = FirebaseFirestore.instance
+          .collection('location_shares')
+          .doc(_sessionId)
+          .collection('viewers')
+          .snapshots()
+          .listen((snap) {
+            if (mounted) {
+              setState(() {
+                _viewers.clear();
+                _viewers.addAll(
+                  snap.docs.map((d) => d.data()['name'] as String? ?? d.id),
+                );
+              });
+            }
+          });
+      _positionSubscription?.cancel();
+      _positionSubscription =
+          Geolocator.getPositionStream(
+            locationSettings: const LocationSettings(distanceFilter: 5),
+          ).listen(
+            (Position pos) {
+              if (!mounted) return;
+              setState(() {
+                _lat = pos.latitude;
+                _lng = pos.longitude;
+                _lastUpdated = DateTime.now();
+              });
+              _mapController.move(LatLng(_lat, _lng), 13.0);
+              if (_sessionId != null) {
+                FirebaseFirestore.instance
+                    .collection('location_shares')
+                    .doc(_sessionId)
+                    .set({
+                      'lat': _lat,
+                      'lng': _lng,
+                      'lastUpdated': FieldValue.serverTimestamp(),
+                    }, SetOptions(merge: true));
+              }
+            },
+            onError: (error) {
+              // Handle location permission errors gracefully
+              debugPrint('Position stream error: $error');
+            },
+          );
+    }
+  }
+
+  void _attachAsViewer() {
+    // add ourselves to viewer list
+    final auth = FirebaseAuth.instance;
+    final uid = auth.currentUser?.uid;
+    final name = auth.currentUser?.displayName ?? 'Người xem';
+    if (widget.sessionId != null && uid != null) {
+      FirebaseFirestore.instance
+          .collection('location_shares')
+          .doc(widget.sessionId)
+          .collection('viewers')
+          .doc(uid)
+          .set({'name': name, 'joined': FieldValue.serverTimestamp()});
+    }
+
+    // listen to the shared session document
+    _sessionSubscription = FirebaseFirestore.instance
+        .collection('location_shares')
+        .doc(widget.sessionId)
+        .snapshots()
+        .listen((snap) {
+          if (!snap.exists) return;
+          final data = snap.data();
+          if (data == null) return;
+          final lat = (data['lat'] as num?)?.toDouble();
+          final lng = (data['lng'] as num?)?.toDouble();
+          final ts = data['lastUpdated'] as Timestamp?;
+          if (lat != null && lng != null) {
+            if (mounted) {
+              setState(() {
+                _lat = lat;
+                _lng = lng;
+                _lastUpdated = ts?.toDate();
+              });
+            }
+            _mapController.move(LatLng(lat, lng), 13.0);
+          }
+        });
+  }
+
+  @override
   void dispose() {
-    _timer?.cancel();
+    _positionSubscription?.cancel();
+
+    _sessionSubscription?.cancel();
+    _viewersSubscription?.cancel();
     super.dispose();
   }
 
@@ -96,11 +381,13 @@ class _ChiaSeThoiGianThucPageState extends State<ChiaSeThoiGianThucPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Chia sẻ thời gian thực')),
-      floatingActionButton: FloatingActionButton.small(
-        onPressed: _invite,
-        tooltip: 'Mời',
-        child: const Icon(Icons.person_add),
-      ),
+      floatingActionButton: _isViewer
+          ? null
+          : FloatingActionButton.small(
+              onPressed: _invite,
+              tooltip: 'Mời',
+              child: const Icon(Icons.person_add),
+            ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -116,11 +403,19 @@ class _ChiaSeThoiGianThucPageState extends State<ChiaSeThoiGianThucPage> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            _isSharing ? 'Đang chia sẻ' : 'Chưa chia sẻ',
+                            _isViewer
+                                ? 'Đang xem'
+                                : (_isSharing
+                                      ? 'Đang chia sẻ'
+                                      : 'Chưa chia sẻ'),
                             style: TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.bold,
-                              color: _isSharing ? Colors.green : Colors.black54,
+                              color: _isViewer
+                                  ? Colors.orange
+                                  : (_isSharing
+                                        ? Colors.green
+                                        : Colors.black54),
                             ),
                           ),
                           const SizedBox(height: 6),
@@ -141,49 +436,54 @@ class _ChiaSeThoiGianThucPageState extends State<ChiaSeThoiGianThucPage> {
                         ],
                       ),
                     ),
-                    ElevatedButton(
-                      onPressed: _toggleSharing,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: _isSharing ? Colors.red : Colors.blue,
+                    if (!_isViewer)
+                      ElevatedButton(
+                        onPressed: _toggleSharing,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _isSharing
+                              ? Colors.red
+                              : Colors.blue,
+                        ),
+                        child: Text(_isSharing ? 'Dừng' : 'Bắt đầu'),
                       ),
-                      child: Text(_isSharing ? 'Dừng' : 'Bắt đầu'),
-                    ),
                   ],
                 ),
               ),
             ),
             const SizedBox(height: 12),
 
-            // Map placeholder
-            Container(
+            // Map showing current position
+            SizedBox(
               height: 180,
-              decoration: BoxDecoration(
-                color: Colors.grey.shade200,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.black12),
-              ),
-              child: Stack(
-                children: [
-                  const Center(
-                    child: Icon(Icons.map, size: 64, color: Colors.grey),
+              child: FlutterMap(
+                mapController: _mapController,
+                options: MapOptions(
+                  initialCenter: LatLng(_lat, _lng),
+                  initialZoom: 13.0,
+                  interactionOptions: InteractionOptions(
+                    flags: InteractiveFlag.all,
                   ),
-                  Positioned(
-                    left: 12,
-                    top: 12,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 6,
+                ),
+                children: [
+                  TileLayer(
+                    urlTemplate:
+                        'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                    userAgentPackageName: 'com.example.tourn',
+                    tileProvider: NetworkTileProvider(),
+                  ),
+                  MarkerLayer(
+                    markers: [
+                      Marker(
+                        point: LatLng(_lat, _lng),
+                        width: 40,
+                        height: 40,
+                        child: const Icon(
+                          Icons.location_on,
+                          size: 32,
+                          color: Colors.red,
+                        ),
                       ),
-                      decoration: BoxDecoration(
-                        color: Colors.white70,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        'Mock map: ${_lat.toStringAsFixed(5)}, ${_lng.toStringAsFixed(5)}',
-                        style: const TextStyle(fontSize: 12),
-                      ),
-                    ),
+                    ],
                   ),
                 ],
               ),
@@ -212,26 +512,31 @@ class _ChiaSeThoiGianThucPageState extends State<ChiaSeThoiGianThucPage> {
                                 child: Text(_viewers[i][0].toUpperCase()),
                               ),
                               title: Text(_viewers[i]),
-                              subtitle: Text('Xem vị trí của bạn'),
+                              subtitle: Text(
+                                _isViewer
+                                    ? 'Đang theo dõi'
+                                    : 'Xem vị trí của bạn',
+                              ),
                             ),
                           ),
                   ),
                   const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          _shareLink,
-                          style: const TextStyle(color: Colors.blue),
-                          overflow: TextOverflow.ellipsis,
+                  if (!_isViewer)
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            _shareLink,
+                            style: const TextStyle(color: Colors.blue),
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
-                      ),
-                      IconButton(
-                        onPressed: _copyLink,
-                        icon: const Icon(Icons.copy),
-                      ),
-                    ],
-                  ),
+                        IconButton(
+                          onPressed: _copyLink,
+                          icon: const Icon(Icons.copy),
+                        ),
+                      ],
+                    ),
                 ],
               ),
             ),

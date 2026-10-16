@@ -1,4 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:tourn/Ui/main/category/menu/widgets/Menu_items/cacdondathang.dart';
+import 'package:tourn/Ui/main/category/menu/widgets/Menu_items/congcuquangba.dart';
+import 'package:tourn/Ui/main/category/menu/widgets/Menu_items/doanhthu.dart';
+import 'package:tourn/Ui/main/category/menu/widgets/Menu_items/thongkevahieusuat.dart';
+import 'package:tourn/Ui/main/category/menu/widgets/Menu_items/taochuyendi.dart';
+import 'package:tourn/Ui/main/category/menu/widgets/Menu_items/trippay/vidientutrippay.dart';
+import 'package:tourn/Ui/main/category/menu/widgets/Menu_items/donhangcuaban.dart';
 import 'Menu_items/kholuutru.dart';
 import 'Menu_items/chiasethoigianthuc.dart';
 import 'Menu_items/taichinhthongminh.dart';
@@ -10,7 +17,9 @@ import 'Menu_items/goiyhanhtrinh.dart';
 import 'Menu_items/Thoitiet.dart';
 
 class QuickAccessGrid extends StatelessWidget {
-  const QuickAccessGrid({super.key});
+  const QuickAccessGrid({super.key, this.isBusinessAccount = false});
+
+  final bool isBusinessAccount;
 
   @override
   Widget build(BuildContext context) {
@@ -52,6 +61,34 @@ class QuickAccessGrid extends StatelessWidget {
                 SizedBox(width: itemWidth, child: Khamphadiadiem()),
                 SizedBox(width: itemWidth, child: Goiyhanhtrinh()),
                 SizedBox(width: itemWidth, child: Thoitiet()),
+                SizedBox(width: itemWidth, child: TaoChuyenDi()),
+
+                SizedBox(
+                  width: itemWidth,
+                  child: Vidientutrippay(),
+                ), 
+                SizedBox(
+                  width: itemWidth,
+                  child: DonHangCuaBan(),
+                ),
+                SizedBox(
+                  width: itemWidth,
+                  child: Thongkevahieusuat(
+                    isBusinessAccount: isBusinessAccount,
+                  ),
+                ),
+                SizedBox(
+                  width: itemWidth,
+                  child: CacDonDatHang(isBusinessAccount: isBusinessAccount),
+                ),
+                SizedBox(
+                  width: itemWidth,
+                  child: DoanhThu(isBusinessAccount: isBusinessAccount),
+                ),
+                SizedBox(
+                  width: itemWidth,
+                  child: CongCuQuangBa(isBusinessAccount: isBusinessAccount),
+                ),
               ],
             );
           },

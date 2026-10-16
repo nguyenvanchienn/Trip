@@ -1,13 +1,17 @@
 import 'package:flutter/material.dart';
-import 'package:tourn/Ui/main/category/menu/widgets/Menu_items/Ghichu.dart';
+import 'package:tourn/Ui/main/category/menu/widgets/Menu_tienich/Thuephuongtiendichuyen.dart';
 import 'package:tourn/Ui/main/category/menu/widgets/Menu_tienich/Thuequanaophukien.dart';
-import 'package:tourn/Ui/main/category/menu/widgets/Menu_tienich/phuongtiendichuyen.dart';
+import 'package:tourn/Ui/main/category/menu/widgets/Menu_tienich/datvemaybay.dart';
+import 'package:tourn/Ui/main/category/menu/widgets/Menu_tienich/datvetau.dart';
+import 'package:tourn/Ui/main/category/menu/widgets/Menu_tienich/datvetauhoa.dart';
+import 'package:tourn/Ui/main/category/menu/widgets/Menu_tienich/datvexekhach.dart';
+import 'package:tourn/Ui/main/category/menu/widgets/Menu_tienich/amthucvungmien.dart';
 import 'Menu_tienich/Datphongkhachsan.dart';
 import 'Menu_tienich/Thuehuongdanvien.dart';
 import 'Menu_tienich/Thuethochupanh.dart';
-import 'Menu_tienich/thanhtoanvachiase.dart';
-import 'Menu_tienich/khamphadiadiem.dart';
-import 'Menu_tienich/goiyhanhtrinh.dart';
+import 'Menu_tienich/timbenhviengannhat.dart';
+import 'Menu_tienich/timkiematmgannhat.dart';
+import 'Menu_tienich/soskhancap.dart';
 
 class Tienich extends StatelessWidget {
   const Tienich({super.key});
@@ -39,14 +43,19 @@ class Tienich extends StatelessWidget {
               spacing: spacing,
               runSpacing: runSpacing,
               children: [
-                SizedBox(width: itemWidth, child: PhuongTienDiChuyen()),
+                SizedBox(width: itemWidth, child: Thuephuongtiendichuyen()),
+                SizedBox(width: itemWidth, child: Datvemaybay()),
+                SizedBox(width: itemWidth, child: Datvetau()),
+                SizedBox(width: itemWidth, child: Datvetauhoa()),
+                SizedBox(width: itemWidth, child: Datvexekhach()),
                 SizedBox(width: itemWidth, child: Datphongkhachsan()),
                 SizedBox(width: itemWidth, child: Thuehuongdanvien()),
                 SizedBox(width: itemWidth, child: Thuethochupanh()),
                 SizedBox(width: itemWidth, child: Thuequanaovaphukien()),
-                SizedBox(width: itemWidth, child: Thanhtoanvachiase()),
-                SizedBox(width: itemWidth, child: Khamphadiadiem()),
-                SizedBox(width: itemWidth, child: Goiyhanhtrinh()),
+                SizedBox(width: itemWidth, child: Amthucvungmien()),
+                SizedBox(width: itemWidth, child: Timbenhviengannhat()),
+                SizedBox(width: itemWidth, child: Timkiematmgannhat()),
+                SizedBox(width: itemWidth, child: SosKhanCap()),
               ],
             );
           },

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:tourn/Ui/main/category/menu/widgets/language.dart';
+import 'package:tourn/Ui/main/category/menu/widgets/Confirm.dart';
 import 'package:easy_localization/easy_localization.dart';
 
 class MenuDrawer extends StatelessWidget {
@@ -85,7 +86,7 @@ class MenuDrawer extends StatelessWidget {
       margin: const EdgeInsets.only(top: 150),
       child: ElevatedButton(
         onPressed: () {
-          // TODO: implement sign out action
+          confirm(context);
         },
         style: ElevatedButton.styleFrom(
           backgroundColor: const Color(0xFF6200EE),

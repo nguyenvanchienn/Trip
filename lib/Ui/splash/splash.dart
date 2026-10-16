@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:tourn/Ui/main/main_page.dart';
 import 'package:tourn/Ui/onboarding/onboarding_page_view.dart';
 import 'package:tourn/Ui/welcome/welcome_page.dart';
 
@@ -18,7 +20,22 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 
   Future<void> _checkAppStatus() async {
+    // wait briefly so splash is visible
     await Future.delayed(const Duration(seconds: 3));
+
+    // if a user is already signed in with Firebase we don't treat them as
+    // "logged out" – go straight to the main page regardless of onboarding
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      if (!mounted) return;
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => Mainpage()),
+      );
+      return;
+    }
+
+    // no active user, continue with normal onboarding/welcome flow
     final iscomplete = await isonboardingcompleted();
     if (!mounted) return;
     if (iscomplete) {

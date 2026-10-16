@@ -67,7 +67,7 @@ class CommunityPostCard extends StatelessWidget {
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(20),
                       ),
-                      backgroundColor: const Color(0xFF1E88E5),
+                      backgroundColor: const Color(0xFFFFB620),
                     ),
                     child: const Text('Theo dõi'),
                   ),

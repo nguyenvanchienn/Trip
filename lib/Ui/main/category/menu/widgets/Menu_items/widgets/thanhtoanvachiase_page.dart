@@ -1,886 +1,794 @@
-import 'dart:convert';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:share_plus/share_plus.dart';
+import 'package:tourn/data/firebase/firebase_menu_service.dart';
+import 'package:tourn/models/menu_models.dart';
 
-class ThousandsSeparatorInputFormatter extends TextInputFormatter {
-  final String separator;
-  ThousandsSeparatorInputFormatter({this.separator = '.'});
-
-  String _format(String digits) {
-    if (digits.isEmpty) return '';
-    final buffer = StringBuffer();
-    int count = 0;
-    for (int i = digits.length - 1; i >= 0; i--) {
-      buffer.write(digits[i]);
-      count++;
-      if (count == 3 && i != 0) {
-        buffer.write(separator);
-        count = 0;
-      }
-    }
-    return buffer.toString().split('').reversed.join();
-  }
+class ThanhtoanvachiasePage extends StatefulWidget {
+  const ThanhtoanvachiasePage({super.key});
 
   @override
-  TextEditingValue formatEditUpdate(
-    TextEditingValue oldValue,
-    TextEditingValue newValue,
-  ) {
-    // keep only digits
-    final digits = newValue.text.replaceAll(RegExp(r'[^0-9]'), '');
-    final formatted = _format(digits);
+  State<ThanhtoanvachiasePage> createState() => _ThanhtoanvachiasePageState();
+}
 
-    // calculate selection
-    int offset = formatted.length - (digits.length - newValue.selection.end);
-    if (offset < 0) offset = 0;
-    return TextEditingValue(
-      text: formatted,
-      selection: TextSelection.collapsed(
-        offset: formatted.length < 0 ? 0 : offset,
+enum _SplitMode { equal, custom, percent }
+
+enum _MemberSource { manual, trip }
+
+class _SplitExpense {
+  _SplitExpense({
+    required this.title,
+    required this.amount,
+    required this.payer,
+    required this.shares,
+  });
+
+  final String title;
+  final double amount;
+  final String payer;
+  final Map<String, double> shares;
+}
+
+class _ThanhtoanvachiasePageState extends State<ThanhtoanvachiasePage> {
+  final FirebaseMenuService _menuService = FirebaseMenuService();
+  final List<String> _manualMembers = [];
+  final List<_SplitExpense> _expenses = [];
+
+  StreamSubscription<List<TripModel>>? _tripsSubscription;
+  List<TripModel> _activeTrips = [];
+  String? _selectedTripId;
+  List<String> _tripMembers = [];
+  _MemberSource _memberSource = _MemberSource.manual;
+
+  List<String> get _members {
+    if (_memberSource == _MemberSource.trip) {
+      return _tripMembers;
+    }
+    if (_manualMembers.isEmpty) {
+      return [];
+    }
+    return ['Bạn', ..._manualMembers];
+  }
+
+  void _removeManualMember(String member) {
+    setState(() => _manualMembers.removeWhere((m) => m == member));
+  }
+
+  Widget _buildMemberChip(String member) {
+    final isManualMode = _memberSource == _MemberSource.manual;
+    final isRemovable = isManualMode && member != 'Bạn';
+
+    if (!isRemovable) {
+      return Chip(label: Text(member));
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 6, right: 4),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Chip(label: Text(member)),
+          Positioned(
+            right: -6,
+            top: -6,
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(10),
+                onTap: () => _removeManualMember(member),
+                child: Container(
+                  width: 18,
+                  height: 18,
+                  decoration: const BoxDecoration(
+                    color: Colors.red,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.close, color: Colors.white, size: 12),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
-  }
-}
-
-class ThanhToanVaChiaSePage extends StatefulWidget {
-  const ThanhToanVaChiaSePage({super.key});
-
-  @override
-  State<ThanhToanVaChiaSePage> createState() => _ThanhToanVaChiaSePageState();
-}
-
-class _ThanhToanVaChiaSePageState extends State<ThanhToanVaChiaSePage> {
-  final _amountCtrl = TextEditingController();
-  final _noteCtrl = TextEditingController();
-  final List<Map<String, dynamic>> _participants = [
-    {
-      'id': 'p1',
-      'name': 'Bạn',
-      'share': 0.0,
-      'contribution': 0.0,
-      'paidFor': '',
-    },
-  ];
-  bool _equalSplit = true;
-  final Map<String, double> _result = {}; // assigned expected amount
-  final Map<String, double> _settlement = {}; // expected - contribution
-
-  final String _historyKey = 'split_history_v1';
-  List<Map<String, dynamic>> _history = [];
-
-  String _fmt(num v) {
-    return v
-        .toStringAsFixed(0)
-        .replaceAllMapped(RegExp(r"\B(?=(\d{3})+(?!\d))"), (m) => '.');
   }
 
   @override
   void initState() {
     super.initState();
-    _loadHistory();
+    _loadActiveTrips();
   }
 
-  Future<void> _loadHistory() async {
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getStringList(_historyKey) ?? [];
-    _history = raw
-        .map((s) {
-          try {
-            final d = jsonDecode(s);
-            if (d is Map<String, dynamic>) return d;
-            if (d is Map) return Map<String, dynamic>.from(d);
-            return <String, dynamic>{};
-          } catch (_) {
-            return <String, dynamic>{};
+  @override
+  void dispose() {
+    _tripsSubscription?.cancel();
+    super.dispose();
+  }
+
+  void _loadActiveTrips() {
+    _tripsSubscription?.cancel();
+    _tripsSubscription = _menuService.getTripsStream().listen((trips) {
+      if (!mounted) return;
+
+      final eligibleTrips = trips.where(_isEligibleTrip).toList();
+
+      setState(() {
+        _activeTrips = eligibleTrips;
+        if (_selectedTripId == null ||
+            !_activeTrips.any((trip) => trip.id == _selectedTripId)) {
+          _selectedTripId = _activeTrips.isNotEmpty
+              ? _activeTrips.first.id
+              : null;
+        }
+
+        if (_activeTrips.isEmpty && _memberSource == _MemberSource.trip) {
+          _memberSource = _MemberSource.manual;
+          _tripMembers = [];
+        }
+      });
+
+      _syncTripMembers();
+    });
+  }
+
+  bool _isEligibleTrip(TripModel trip) {
+    if (trip.status == TripStatus.pending ||
+        trip.status == TripStatus.gathering ||
+        trip.status == TripStatus.active) {
+      return true;
+    }
+
+    if (trip.status == TripStatus.completed ||
+        trip.status == TripStatus.cancelled) {
+      final now = DateTime.now();
+      final tripStoppedAt = DateTime(
+        trip.endDate.year,
+        trip.endDate.month,
+        trip.endDate.day,
+        23,
+        59,
+        59,
+      );
+      final daysFromStop = now.difference(tripStoppedAt).inDays;
+      return daysFromStop >= 0 && daysFromStop <= 7;
+    }
+
+    return false;
+  }
+
+  Future<void> _syncTripMembers() async {
+    if (_memberSource != _MemberSource.trip) return;
+    final tripId = _selectedTripId;
+    if (tripId == null) {
+      if (mounted) setState(() => _tripMembers = []);
+      return;
+    }
+
+    final trip = _activeTrips.where((t) => t.id == tripId).firstOrNull;
+    if (trip == null || trip.members.isEmpty) {
+      if (mounted) setState(() => _tripMembers = []);
+      return;
+    }
+
+    final names = await _menuService.getMemberNames(trip.members);
+    final currentUserId = _menuService.currentUserId;
+    final resolved = trip.members
+        .map((memberId) {
+          if (memberId == currentUserId) {
+            return 'Bạn';
           }
+          return (names[memberId] ?? 'Người dùng').trim();
         })
-        .where((m) => m.isNotEmpty)
+        .where((name) => name.isNotEmpty)
+        .toSet()
         .toList();
 
-    // Normalize older records: ensure participants have assigned, contribution, settlement and total is numeric
-    bool updated = false;
-    for (var h in _history) {
-      // normalize total
-      if (h['total'] is String) {
-        final n = num.tryParse(h['total']);
-        if (n != null) {
-          h['total'] = n;
-          updated = true;
-        }
-      }
+    if (!mounted) return;
+    setState(() {
+      _tripMembers = resolved;
+    });
+  }
 
-      final parts = (h['participants'] as List).cast<Map<String, dynamic>>();
-      for (var p in parts) {
-        // if old key 'amount' exists, map to 'assigned'
-        if (p.containsKey('amount') && !p.containsKey('assigned')) {
-          p['assigned'] = p['amount'];
-          updated = true;
-        }
-        // ensure contribution exists
-        if (!p.containsKey('contribution')) {
-          p['contribution'] = 0;
-          updated = true;
-        }
-        // ensure settlement exists
-        final assigned = (p['assigned'] ?? p['amount']) as num? ?? 0;
-        final contrib = (p['contribution'] as num?) ?? 0;
-        final settle = (p['settlement'] as num?) ?? (assigned - contrib);
-        if (p['settlement'] != settle) {
-          p['settlement'] = settle;
-          updated = true;
-        }
+  String _fmtMoney(num value) {
+    return value
+        .toStringAsFixed(0)
+        .replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (m) => '.');
+  }
+
+  Map<String, double> _balances() {
+    final result = <String, double>{for (final member in _members) member: 0};
+
+    for (final expense in _expenses) {
+      result[expense.payer] = (result[expense.payer] ?? 0) + expense.amount;
+      for (final entry in expense.shares.entries) {
+        result[entry.key] = (result[entry.key] ?? 0) - entry.value;
       }
     }
 
-    if (updated) {
-      final prefs2 = await SharedPreferences.getInstance();
-      await prefs2.setStringList(
-        _historyKey,
-        _history.map((e) => jsonEncode(e)).toList(),
+    return result;
+  }
+
+  List<String> _suggestSettlements() {
+    final balances = _balances();
+    final debtors = <MapEntry<String, double>>[];
+    final creditors = <MapEntry<String, double>>[];
+
+    balances.forEach((name, amount) {
+      if (amount < -0.01) {
+        debtors.add(MapEntry(name, -amount));
+      } else if (amount > 0.01) {
+        creditors.add(MapEntry(name, amount));
+      }
+    });
+
+    final suggestions = <String>[];
+    int i = 0;
+    int j = 0;
+    int guard = 0;
+    final maxIterations = debtors.length * creditors.length + 10;
+    while (i < debtors.length &&
+        j < creditors.length &&
+        guard < maxIterations) {
+      guard++;
+      final debtor = debtors[i];
+      final creditor = creditors[j];
+      final settled = debtor.value < creditor.value
+          ? debtor.value
+          : creditor.value;
+
+      if (settled <= 0) {
+        break;
+      }
+
+      suggestions.add(
+        '${debtor.key} tra ${_fmtMoney(settled)} VND cho ${creditor.key}',
       );
+
+      final newDebtorValue = debtor.value - settled;
+      final newCreditorValue = creditor.value - settled;
+
+      debtors[i] = MapEntry(debtor.key, newDebtorValue);
+      creditors[j] = MapEntry(creditor.key, newCreditorValue);
+
+      if (newDebtorValue <= 0.01) i++;
+      if (newCreditorValue <= 0.01) j++;
     }
 
-    setState(() {});
+    return suggestions;
   }
 
-  Future<void> _saveHistory(Map<String, dynamic> record) async {
-    final prefs = await SharedPreferences.getInstance();
-    _history.insert(0, record);
-    await prefs.setStringList(
-      _historyKey,
-      _history.map((e) => jsonEncode(e)).toList(),
-    );
-    setState(() {});
-  }
+  double get _totalExpense => _expenses.fold(0, (sum, e) => sum + e.amount);
 
-  void _addParticipant() async {
-    final ctrl = TextEditingController();
-    final res = await showDialog<String?>(
+  Future<void> _addMember() async {
+    if (_memberSource == _MemberSource.trip) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Đang dùng dữ liệu thành viên từ chuyến đi đã chọn'),
+        ),
+      );
+      return;
+    }
+
+    final controller = TextEditingController();
+    final name = await showDialog<String>(
       context: context,
-      builder: (c) => AlertDialog(
-        title: const Text('Thêm người tham gia'),
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Thêm thành viên'),
         content: TextField(
-          controller: ctrl,
-          decoration: const InputDecoration(hintText: 'Tên'),
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(
+            labelText: 'Tên thành viên',
+            hintText: 'Ví dụ: Cường',
+          ),
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(c).pop(),
+            onPressed: () => Navigator.of(dialogContext).pop(),
             child: const Text('Hủy'),
           ),
-          TextButton(
-            onPressed: () => Navigator.of(c).pop(ctrl.text.trim()),
-            child: const Text('Thêm'),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(controller.text),
+            child: const Text('Lưu'),
           ),
         ],
       ),
     );
 
-    if (res != null && res.isNotEmpty) {
-      _participants.add({
-        'id': DateTime.now().microsecondsSinceEpoch.toString(),
-        'name': res,
-        'share': 0.0,
-        'contribution': 0.0,
-        'paidFor': '',
-      });
-      setState(() {});
-    }
-  }
-
-  void _removeParticipant(String id) {
-    if (_participants.length <= 1) return;
-    _participants.removeWhere((p) => p['id'] == id);
-    setState(() {});
-  }
-
-  void _calculate() {
-    final total =
-        double.tryParse(_amountCtrl.text.replaceAll('.', '').trim()) ?? 0.0;
-    if (total <= 0 || _participants.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Nhập tổng tiền và ít nhất 1 người')),
-      );
-      return;
-    }
-
-    _result.clear();
-    _settlement.clear();
-
-    if (_equalSplit) {
-      final per = double.parse(
-        (total / _participants.length).toStringAsFixed(0),
-      );
-      for (final p in _participants) {
-        _result[p['id']] = per;
-      }
-      // adjust remainder
-      final rem = total - per * _participants.length;
-      if (rem != 0) {
-        _result[_participants.first['id']] =
-            (_result[_participants.first['id']] ?? 0) + rem;
-      }
-    } else {
-      // use provided share percentages or amounts (share field)
-      final totalShare = _participants.fold<double>(
-        0.0,
-        (s, p) => s + (p['share'] as double? ?? 0.0),
-      );
-      if (totalShare <= 0) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Nhập tỷ lệ/chia sẻ cho từng người')),
-        );
-        return;
-      }
-      for (final p in _participants) {
-        final share = (p['share'] as double? ?? 0.0) / totalShare;
-        _result[p['id']] = double.parse((share * total).toStringAsFixed(0));
-      }
-      // adjust rounding
-      final sum = _result.values.fold<double>(0.0, (a, b) => a + b);
-      final diff = total - sum;
-      if (diff != 0) {
-        _result[_participants.first['id']] =
-            (_result[_participants.first['id']] ?? 0) + diff;
-      }
-    }
-
-    // calculate settlement considering contribution each has paid
-    for (final p in _participants) {
-      final contrib = (p['contribution'] as num?)?.toDouble() ?? 0.0;
-      final expected = _result[p['id']] ?? 0.0;
-      _settlement[p['id']] = double.parse(
-        (expected - contrib).toStringAsFixed(0),
-      );
-    }
-
-    setState(() {});
-  }
-
-  Future<void> _saveSettlement() async {
-    if (_result.isEmpty) {
+    final cleaned = (name ?? '').trim();
+    if (cleaned.isEmpty) return;
+    if (cleaned.toLowerCase() == 'ban' || cleaned.toLowerCase() == 'bạn') {
+      if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('Chưa có kết quả để lưu')));
+      ).showSnackBar(const SnackBar(content: Text('Bạn đã có sẵn trong nhóm')));
+      return;
+    }
+    if (_manualMembers.any((m) => m.toLowerCase() == cleaned.toLowerCase())) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Thành viên đã tồn tại')));
       return;
     }
 
-    final record = {
-      'id': DateTime.now().microsecondsSinceEpoch.toString(),
-      'total': double.tryParse(_amountCtrl.text.replaceAll('.', '')) ?? 0,
-      'note': _noteCtrl.text,
-      'date': DateTime.now().toIso8601String(),
-      'participants': _participants
-          .map(
-            (p) => {
-              'id': p['id'],
-              'name': p['name'],
-              'assigned': _result[p['id']],
-              'contribution': p['contribution'],
-              'settlement': _settlement[p['id']],
-              'paidFor': p['paidFor'] ?? '',
-            },
-          )
-          .toList(),
+    setState(() => _manualMembers.add(cleaned));
+  }
+
+  Future<void> _addExpense() async {
+    if (_members.isEmpty) return;
+
+    final titleController = TextEditingController();
+    final amountController = TextEditingController();
+    String payer = _members.first;
+    _SplitMode mode = _SplitMode.equal;
+    final selectedMembers = <String>{..._members};
+    final customControllers = <String, TextEditingController>{
+      for (final member in _members) member: TextEditingController(),
     };
 
-    await _saveHistory(record);
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('Đã lưu giao dịch')));
-  }
-
-  @override
-  void dispose() {
-    _amountCtrl.dispose();
-    _noteCtrl.dispose();
-    super.dispose();
-  }
-
-  Future<void> _showShareSheet(BuildContext ctx, String message) async {
-    final contacts = [
-      {'name': 'Bạn', 'initials': 'B'},
-      {'name': 'Minh', 'initials': 'M'},
-      {'name': 'Lan', 'initials': 'L'},
-      {'name': 'An', 'initials': 'A'},
-      {'name': 'Thanh', 'initials': 'T'},
-    ];
-
-    await showModalBottomSheet(
-      context: ctx,
+    final created = await showModalBottomSheet<_SplitExpense>(
+      context: context,
       isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (c) {
-        final maxH = MediaQuery.of(ctx).size.height * 0.78;
-        return SafeArea(
-          child: SingleChildScrollView(
-            child: ConstrainedBox(
-              constraints: BoxConstraints(maxHeight: maxH),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+      showDragHandle: true,
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (innerContext, setInnerState) {
+            final inset = MediaQuery.of(innerContext).viewInsets.bottom;
+            return Padding(
+              padding: EdgeInsets.fromLTRB(16, 8, 16, inset + 16),
+              child: SingleChildScrollView(
                 child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Container(
-                      width: 40,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: Colors.grey[300],
-                        borderRadius: BorderRadius.circular(2),
+                    const Text(
+                      'Tạo khoản chi',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
                     const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        const Text(
-                          'Chia sẻ',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600,
-                          ),
+                    TextField(
+                      controller: titleController,
+                      decoration: const InputDecoration(
+                        labelText: 'Nội dung',
+                        hintText: 'Ăn tối, taxi, khách sạn...',
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: amountController,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Số tiền (VND)',
+                        prefixIcon: Icon(Icons.payments_outlined),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    DropdownButtonFormField<String>(
+                      initialValue: payer,
+                      decoration: const InputDecoration(labelText: 'Người trả'),
+                      items: _members
+                          .map(
+                            (m) => DropdownMenuItem(value: m, child: Text(m)),
+                          )
+                          .toList(),
+                      onChanged: (value) {
+                        if (value != null) {
+                          setInnerState(() => payer = value);
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    SegmentedButton<_SplitMode>(
+                      segments: const [
+                        ButtonSegment(
+                          value: _SplitMode.equal,
+                          label: Text('Chia đều'),
+                          icon: Icon(Icons.balance),
                         ),
-                        const Spacer(),
-                        IconButton(
-                          icon: const Icon(Icons.close),
-                          onPressed: () => Navigator.of(c).pop(),
+                        ButtonSegment(
+                          value: _SplitMode.custom,
+                          label: Text('Chia tay'),
+                          icon: Icon(Icons.tune),
+                        ),
+                        ButtonSegment(
+                          value: _SplitMode.percent,
+                          label: Text('Chia %'),
+                          icon: Icon(Icons.percent),
                         ),
                       ],
+                      selected: {mode},
+                      onSelectionChanged: (selection) {
+                        setInnerState(() => mode = selection.first);
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Người tham gia',
+                      style: TextStyle(fontWeight: FontWeight.w600),
                     ),
                     const SizedBox(height: 8),
-                    SizedBox(
-                      height: 86,
-                      child: ListView.separated(
-                        scrollDirection: Axis.horizontal,
-                        itemCount: contacts.length,
-                        separatorBuilder: (_, __) => const SizedBox(width: 12),
-                        itemBuilder: (context, i) {
-                          final ct = contacts[i];
-                          return Column(
-                            children: [
-                              CircleAvatar(
-                                child: Text((ct['initials'] ?? '').toString()),
-                              ),
-                              const SizedBox(height: 8),
-                              SizedBox(
-                                width: 64,
-                                child: Text(
-                                  (ct['name'] ?? '').toString(),
-                                  overflow: TextOverflow.ellipsis,
-                                  textAlign: TextAlign.center,
-                                ),
-                              ),
-                            ],
-                          );
-                        },
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade100,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: ConstrainedBox(
-                        constraints: BoxConstraints(maxHeight: maxH * 0.5),
-                        child: SingleChildScrollView(
-                          child: SelectableText(message),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: ElevatedButton(
-                            onPressed: () async {
-                              Navigator.of(c).pop();
-                              try {
-                                await Share.share(
-                                  message,
-                                  subject: 'Lịch sử giao dịch',
-                                );
-                                if (mounted) {
-                                  ScaffoldMessenger.of(ctx).showSnackBar(
-                                    const SnackBar(
-                                      content: Text('Đã mở tùy chọn chia sẻ'),
-                                    ),
-                                  );
-                                }
-                              } catch (_) {
-                                await Clipboard.setData(
-                                  ClipboardData(text: message),
-                                );
-                                if (mounted) {
-                                  ScaffoldMessenger.of(ctx).showSnackBar(
-                                    const SnackBar(
-                                      content: Text(
-                                        'Không hỗ trợ chia sẻ — đã copy vào clipboard',
-                                      ),
-                                    ),
-                                  );
-                                }
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: _members.map((member) {
+                        return FilterChip(
+                          label: Text(member),
+                          selected: selectedMembers.contains(member),
+                          onSelected: (selected) {
+                            setInnerState(() {
+                              if (selected) {
+                                selectedMembers.add(member);
+                              } else {
+                                selectedMembers.remove(member);
                               }
-                            },
-                            child: const Text('Chia sẻ'),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        OutlinedButton(
-                          onPressed: () async {
-                            await Clipboard.setData(
-                              ClipboardData(text: message),
-                            );
-                            Navigator.of(c).pop();
-                            if (mounted) {
-                              ScaffoldMessenger.of(ctx).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Đã sao chép vào clipboard'),
-                                ),
-                              );
-                            }
+                            });
                           },
-                          child: const Text('Sao chép'),
-                        ),
-                      ],
+                        );
+                      }).toList(),
                     ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Thanh toán và chia tiền')),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _addParticipant,
-        icon: const Icon(Icons.person_add),
-        label: const Text('Thêm người'),
-      ),
-      body: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.all(12.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              TextField(
-                controller: _amountCtrl,
-                keyboardType: TextInputType.number,
-                inputFormatters: [
-                  FilteringTextInputFormatter.digitsOnly,
-                  ThousandsSeparatorInputFormatter(),
-                ],
-                decoration: const InputDecoration(
-                  labelText: 'Tổng tiền (VNĐ)',
-                  prefixIcon: Icon(Icons.payments),
-                ),
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: _noteCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Ghi chú',
-                  prefixIcon: Icon(Icons.note),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: () {
-                        setState(() => _equalSplit = true);
-                        _calculate();
-                      },
-                      child: const Text('Chia đều'),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: () {
-                        setState(() => _equalSplit = false);
-                        _calculate();
-                      },
-                      child: const Text('Chia theo tỉ lệ'),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      const Text(
-                        'Danh sách người',
-                        style: TextStyle(fontWeight: FontWeight.bold),
+                    if (mode == _SplitMode.custom ||
+                        mode == _SplitMode.percent) ...[
+                      const SizedBox(height: 12),
+                      Text(
+                        mode == _SplitMode.custom
+                            ? 'Nhập số tiền từng người'
+                            : 'Nhập phần trăm từng người',
+                        style: const TextStyle(fontWeight: FontWeight.w600),
                       ),
                       const SizedBox(height: 8),
-                      ..._participants.map((p) {
-                        return Card(
-                          color: Colors.white,
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 14,
+                      ...selectedMembers.map((member) {
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: TextField(
+                            controller: customControllers[member],
+                            keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true,
                             ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: Text(
-                                        p['name'],
-                                        style: const TextStyle(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    ),
-                                    IconButton(
-                                      icon: const Icon(Icons.delete),
-                                      onPressed: () =>
-                                          _removeParticipant(p['id']),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 8),
-                                if (!_equalSplit)
-                                  TextField(
-                                    keyboardType: TextInputType.number,
-                                    style: const TextStyle(fontSize: 16),
-                                    decoration: const InputDecoration(
-                                      hintText: 'Nhập tỉ lệ (vd: 55)',
-                                      prefixIcon: Icon(Icons.percent),
-                                      contentPadding: EdgeInsets.symmetric(
-                                        vertical: 12.0,
-                                        horizontal: 12.0,
-                                      ),
-                                    ),
-                                    onChanged: (v) {
-                                      final val = double.tryParse(v) ?? 0.0;
-                                      setState(() => p['share'] = val);
-                                    },
-                                  ),
-                                const SizedBox(height: 8),
-                                TextField(
-                                  decoration: const InputDecoration(
-                                    hintText:
-                                        'Trả cho (ví dụ: xăng, khách sạn)',
-                                    prefixIcon: Icon(Icons.description),
-                                  ),
-                                  minLines: 1,
-                                  maxLines: 2,
-                                  style: const TextStyle(fontSize: 16),
-                                  onChanged: (v) =>
-                                      setState(() => p['paidFor'] = v),
-                                ),
-                                const SizedBox(height: 8),
-                                TextField(
-                                  keyboardType: TextInputType.number,
-                                  style: const TextStyle(fontSize: 18),
-                                  inputFormatters: [
-                                    FilteringTextInputFormatter.digitsOnly,
-                                    ThousandsSeparatorInputFormatter(),
-                                  ],
-                                  decoration: const InputDecoration(
-                                    hintText: 'Đóng góp (VNĐ)',
-                                    prefixIcon: Icon(Icons.payments),
-                                    contentPadding: EdgeInsets.symmetric(
-                                      vertical: 14.0,
-                                      horizontal: 12.0,
-                                    ),
-                                  ),
-                                  onChanged: (v) {
-                                    final val =
-                                        double.tryParse(
-                                          v.replaceAll('.', ''),
-                                        ) ??
-                                        0.0;
-                                    setState(() => p['contribution'] = val);
-                                  },
-                                ),
-                                const SizedBox(height: 8),
-                                Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text(
-                                      'Đã đóng: ${_fmt((p['contribution'] as num?) ?? 0)} VNĐ',
-                                      style: const TextStyle(
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                    ),
-                                    Padding(
-                                      padding: const EdgeInsets.only(
-                                        right: 12.0,
-                                      ),
-                                      child: Text(
-                                        _settlement[p['id']] == null
-                                            ? ''
-                                            : (_settlement[p['id']]! >= 0
-                                                  ? 'Đóng ${_fmt(_settlement[p['id']]!)} VNĐ'
-                                                  : 'Nhận ${_fmt(-_settlement[p['id']]!)} VNĐ'),
-                                        textAlign: TextAlign.right,
-                                        style: TextStyle(
-                                          color: _settlement[p['id']] == null
-                                              ? null
-                                              : (_settlement[p['id']]! >= 0
-                                                    ? Colors.red
-                                                    : Colors.green),
-                                          fontWeight: FontWeight.w700,
-                                          fontSize: 14,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
+                            decoration: InputDecoration(
+                              labelText: member,
+                              suffixText: mode == _SplitMode.custom
+                                  ? 'VND'
+                                  : '%',
                             ),
                           ),
                         );
                       }),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          ElevatedButton(
-                            onPressed: _calculate,
-                            child: const Text('Tính'),
-                          ),
-                          const SizedBox(width: 8),
-                          ElevatedButton(
-                            onPressed: _saveSettlement,
-                            child: const Text('Lưu'),
-                          ),
-                        ],
-                      ),
                     ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              const Text(
-                'Lịch sử giao dịch',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 8),
-              _history.isEmpty
-                  ? const Center(child: Text('Chưa có giao dịch nào'))
-                  : ListView.separated(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      itemCount: _history.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 8),
-                      itemBuilder: (context, i) {
-                        final h = _history[i];
-                        return Dismissible(
-                          key: ValueKey(h['id'] ?? i),
-                          direction: DismissDirection.startToEnd,
-                          background: Container(
-                            color: Colors.grey.shade200,
-                            alignment: Alignment.centerLeft,
-                            padding: const EdgeInsets.only(left: 16.0),
-                            child: const Icon(
-                              Icons.more_vert,
-                              color: Colors.black54,
-                            ),
-                          ),
-                          confirmDismiss: (dir) async {
-                            if (dir == DismissDirection.startToEnd) {
-                              final action =
-                                  await showModalBottomSheet<String?>(
-                                    context: context,
-                                    builder: (c) => SafeArea(
-                                      child: Column(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          ListTile(
-                                            leading: const Icon(Icons.share),
-                                            title: const Text('Chia sẻ'),
-                                            onTap: () =>
-                                                Navigator.of(c).pop('share'),
-                                          ),
-                                          ListTile(
-                                            leading: const Icon(Icons.delete),
-                                            title: const Text('Xóa'),
-                                            onTap: () =>
-                                                Navigator.of(c).pop('delete'),
-                                          ),
-                                          ListTile(
-                                            leading: const Icon(Icons.close),
-                                            title: const Text('Hủy'),
-                                            onTap: () =>
-                                                Navigator.of(c).pop(null),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  );
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        icon: const Icon(Icons.check),
+                        label: const Text('Lưu khoản chi'),
+                        onPressed: () {
+                          final amount =
+                              double.tryParse(amountController.text.trim()) ??
+                              0;
+                          final title = titleController.text.trim().isEmpty
+                              ? 'Khoản chi mới'
+                              : titleController.text.trim();
 
-                              if (action == 'share') {
-                                final sb = StringBuffer();
-                                sb.writeln(
-                                  'Tổng: ${_fmt(num.tryParse((h['total'] ?? '').toString()) ?? 0)} VNĐ',
-                                );
-                                sb.writeln('Ghi chú: ${h['note'] ?? ''}');
-                                for (final p in (h['participants'] as List)) {
-                                  final contrib =
-                                      num.tryParse(
-                                        (p['contribution'] ?? '').toString(),
-                                      ) ??
-                                      0;
-                                  final settle =
-                                      num.tryParse(
-                                        (p['settlement'] ?? '').toString(),
-                                      ) ??
-                                      0;
-                                  final paidFor = (p['paidFor'] ?? '')
-                                      .toString();
-                                  sb.writeln(
-                                    '- ${p['name']}${paidFor.isNotEmpty ? ' ($paidFor)' : ''}: đóng ${_fmt(contrib)} VNĐ, ${settle >= 0 ? 'Đóng ${_fmt(settle)} VNĐ' : 'Nhận ${_fmt(-settle)} VNĐ'}',
-                                  );
-                                }
-                                await _showShareSheet(context, sb.toString());
-                                return false;
-                              } else if (action == 'delete') {
-                                final sure = await showDialog<bool?>(
-                                  context: context,
-                                  builder: (c) => AlertDialog(
-                                    title: const Text('Xác nhận'),
-                                    content: const Text(
-                                      'Bạn có chắc muốn xóa lịch sử này?',
-                                    ),
-                                    actions: [
-                                      TextButton(
-                                        onPressed: () =>
-                                            Navigator.of(c).pop(false),
-                                        child: const Text('Hủy'),
-                                      ),
-                                      TextButton(
-                                        onPressed: () =>
-                                            Navigator.of(c).pop(true),
-                                        child: const Text('Xóa'),
-                                      ),
-                                    ],
-                                  ),
-                                );
-                                return sure ?? false;
-                              }
-                            }
-                            return false;
-                          },
-                          onDismissed: (dir) async {
-                            final id = h['id'];
-                            _history.removeWhere((e) => e['id'] == id);
-                            final prefs = await SharedPreferences.getInstance();
-                            await prefs.setStringList(
-                              _historyKey,
-                              _history.map((e) => jsonEncode(e)).toList(),
+                          if (amount <= 0) {
+                            ScaffoldMessenger.of(innerContext).showSnackBar(
+                              const SnackBar(content: Text('Số tiền phải > 0')),
                             );
-                            if (mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Đã xóa lịch sử')),
-                              );
-                            }
-                          },
-                          child: Card(
-                            child: ListTile(
-                              title: Text(
-                                'Tổng: ${_fmt(num.tryParse((h['total'] ?? '').toString()) ?? 0)} VNĐ',
-                              ),
-                              subtitle: Text(
-                                '${h['note'] ?? ''} • ${h['date'] ?? ''}',
-                              ),
-                              onTap: () => showDialog(
-                                context: context,
-                                builder: (c) => AlertDialog(
-                                  title: const Text('Chi tiết'),
-                                  content: SizedBox(
-                                    width: double.maxFinite,
-                                    child: ConstrainedBox(
-                                      constraints: BoxConstraints(
-                                        maxHeight:
-                                            MediaQuery.of(context).size.height *
-                                            0.6,
-                                      ),
-                                      child: ListView(
-                                        shrinkWrap: true,
-                                        children: (h['participants'] as List).map<Widget>((
-                                          p,
-                                        ) {
-                                          final contrib =
-                                              num.tryParse(
-                                                (p['contribution'] ?? '')
-                                                    .toString(),
-                                              ) ??
-                                              0;
-                                          final settle =
-                                              num.tryParse(
-                                                (p['settlement'] ?? '')
-                                                    .toString(),
-                                              ) ??
-                                              0;
-                                          final paidFor = (p['paidFor'] ?? '')
-                                              .toString();
-                                          return ListTile(
-                                            title: Text(p['name'] ?? ''),
-                                            subtitle: Text(
-                                              'Đóng góp: ${_fmt(contrib)} VNĐ${paidFor.isNotEmpty ? ' • Trả cho: $paidFor' : ''}',
-                                            ),
-                                            trailing: Padding(
-                                              padding: const EdgeInsets.only(
-                                                right: 12.0,
-                                              ),
-                                              child: Text(
-                                                settle >= 0
-                                                    ? 'Đóng ${_fmt(settle)} VNĐ'
-                                                    : 'Nhận ${_fmt(-settle)} VNĐ',
-                                                style: TextStyle(
-                                                  color: settle >= 0
-                                                      ? Colors.red
-                                                      : Colors.green,
-                                                  fontWeight: FontWeight.w600,
-                                                ),
-                                                textAlign: TextAlign.right,
-                                              ),
-                                            ),
-                                          );
-                                        }).toList(),
-                                      ),
-                                    ),
-                                  ),
-                                  actions: [
-                                    TextButton(
-                                      onPressed: () => Navigator.of(c).pop(),
-                                      child: const Text('Đóng'),
-                                    ),
-                                  ],
+                            return;
+                          }
+                          if (selectedMembers.isEmpty) {
+                            ScaffoldMessenger.of(innerContext).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'Cần chọn ít nhất 1 người tham gia',
                                 ),
                               ),
+                            );
+                            return;
+                          }
+
+                          final shares = <String, double>{};
+                          if (mode == _SplitMode.equal) {
+                            final perHead = amount / selectedMembers.length;
+                            for (final member in selectedMembers) {
+                              shares[member] = perHead;
+                            }
+                          } else if (mode == _SplitMode.custom) {
+                            double sum = 0;
+                            for (final member in selectedMembers) {
+                              final value =
+                                  double.tryParse(
+                                    customControllers[member]?.text.trim() ??
+                                        '',
+                                  ) ??
+                                  0;
+                              shares[member] = value;
+                              sum += value;
+                            }
+
+                            if ((sum - amount).abs() > 1) {
+                              ScaffoldMessenger.of(innerContext).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    'Tổng chia (${_fmtMoney(sum)}) phải bằng số tiền (${_fmtMoney(amount)})',
+                                  ),
+                                ),
+                              );
+                              return;
+                            }
+                          } else {
+                            double percentSum = 0;
+                            for (final member in selectedMembers) {
+                              final percentValue =
+                                  double.tryParse(
+                                    customControllers[member]?.text.trim() ??
+                                        '',
+                                  ) ??
+                                  0;
+                              shares[member] = amount * percentValue / 100;
+                              percentSum += percentValue;
+                            }
+
+                            if ((percentSum - 100).abs() > 0.1) {
+                              ScaffoldMessenger.of(innerContext).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    'Tổng phần trăm (${percentSum.toStringAsFixed(2)}%) phải bằng 100%',
+                                  ),
+                                ),
+                              );
+                              return;
+                            }
+                          }
+
+                          Navigator.of(sheetContext).pop(
+                            _SplitExpense(
+                              title: title,
+                              amount: amount,
+                              payer: payer,
+                              shares: shares,
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    for (final controller in customControllers.values) {
+      controller.dispose();
+    }
+    titleController.dispose();
+    amountController.dispose();
+
+    if (created == null) return;
+    setState(() => _expenses.insert(0, created));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final balances = _balances();
+    final settlements = _suggestSettlements();
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Thanh toán và chia sẻ')),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _addExpense,
+        icon: const Icon(Icons.add),
+        label: const Text('Thêm khoản chi'),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(12),
+        children: [
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Nhóm chia tiền',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 10),
+                  SegmentedButton<_MemberSource>(
+                    segments: const [
+                      ButtonSegment<_MemberSource>(
+                        value: _MemberSource.manual,
+                        label: Text('Nhập riêng'),
+                        icon: Icon(Icons.edit_note),
+                      ),
+                      ButtonSegment<_MemberSource>(
+                        value: _MemberSource.trip,
+                        label: Text('Từ chuyến đi'),
+                        icon: Icon(Icons.luggage),
+                      ),
+                    ],
+                    selected: {_memberSource},
+                    onSelectionChanged: (selection) async {
+                      final selected = selection.first;
+                      if (selected == _MemberSource.trip &&
+                          _activeTrips.isEmpty) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'Không có chuyến đi phù hợp (đang hoạt động hoặc đã dừng <= 7 ngày)',
                             ),
                           ),
                         );
+                        return;
+                      }
+
+                      setState(() {
+                        _memberSource = selected;
+                      });
+                      await _syncTripMembers();
+                    },
+                  ),
+                  if (_memberSource == _MemberSource.trip) ...[
+                    const SizedBox(height: 10),
+                    DropdownButtonFormField<String>(
+                      initialValue: _selectedTripId,
+                      decoration: const InputDecoration(
+                        labelText: 'Chọn chuyến đi',
+                      ),
+                      items: _activeTrips
+                          .map(
+                            (trip) => DropdownMenuItem<String>(
+                              value: trip.id,
+                              child: Text(trip.name),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (value) async {
+                        if (value == null) return;
+                        setState(() => _selectedTripId = value);
+                        await _syncTripMembers();
                       },
                     ),
-            ],
+                  ],
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: _members.map(_buildMemberChip).toList(),
+                  ),
+                  if (_memberSource == _MemberSource.manual) ...[
+                    const SizedBox(height: 10),
+                    OutlinedButton.icon(
+                      onPressed: _addMember,
+                      icon: const Icon(Icons.person_add_alt_1),
+                      label: const Text('Thêm thành viên'),
+                    ),
+                  ],
+                ],
+              ),
+            ),
           ),
-        ),
+          const SizedBox(height: 12),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'Tổng chi',
+                        style: TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      Text(
+                        '${_fmtMoney(_totalExpense)} VND',
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Số dư từng người',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 8),
+                  ..._members.map((member) {
+                    final amount = balances[member] ?? 0;
+                    final isPositive = amount > 0.01;
+                    final isNegative = amount < -0.01;
+                    final color = isPositive
+                        ? Colors.green
+                        : (isNegative ? Colors.red : Colors.grey.shade700);
+                    final prefix = isPositive ? '+' : '';
+
+                    return ListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      leading: CircleAvatar(
+                        backgroundColor: Colors.blueGrey.shade50,
+                        child: Text(member.substring(0, 1).toUpperCase()),
+                      ),
+                      title: Text(member),
+                      subtitle: Text(
+                        isPositive
+                            ? 'Được nhận'
+                            : (isNegative ? 'Cần trả' : 'Cân bằng'),
+                      ),
+                      trailing: Text(
+                        '$prefix${_fmtMoney(amount)} VND',
+                        style: TextStyle(
+                          color: color,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    );
+                  }),
+                  if (settlements.isNotEmpty) ...[
+                    const Divider(height: 24),
+                    const Text(
+                      'Gợi ý thanh toán',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 6),
+                    ...settlements.map(
+                      (line) => Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Text('- $line'),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            'Lịch sử khoản chi',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          if (_expenses.isEmpty)
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                color: Colors.grey.shade100,
+              ),
+              child: const Text(
+                'Chưa có khoản chi nào. Bấm "Thêm khoản chi" để bắt đầu.',
+              ),
+            )
+          else
+            ..._expenses.map((expense) {
+              final splitText = expense.shares.entries
+                  .map((e) => '${e.key}: ${_fmtMoney(e.value)}')
+                  .join(' | ');
+              return Card(
+                margin: const EdgeInsets.only(bottom: 8),
+                child: ListTile(
+                  title: Text(expense.title),
+                  subtitle: Text(
+                    'Người trả: ${expense.payer}\nChia: $splitText',
+                  ),
+                  trailing: Text(
+                    '${_fmtMoney(expense.amount)} VND',
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ),
+              );
+            }),
+          const SizedBox(height: 80),
+        ],
       ),
     );
   }

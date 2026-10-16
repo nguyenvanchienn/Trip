@@ -1,10 +1,21 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:tourn/ultils.enums/image_utils.dart';
+import 'package:tourn/Ui/main/category/menu/widgets/Menu_tienich/widgets/image_carousel.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:tourn/data/firebase/firebase_business_service.dart';
+import 'package:tourn/data/firebase/firebase_menu_service.dart';
+import 'package:tourn/Ui/main/category/business/business_profile_page.dart';
+import 'package:tourn/Ui/main/category/menu/widgets/Menu_items/widgets/donhangcuaban_page.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:tourn/Ui/main/category/menu/widgets/Menu_tienich/widgets/Thuethochupanh_booking.dart';
 
 String formatCurrency(int v) =>
-    '${v.toString().replaceAllMapped(RegExp(r"\B(?=(\d{3})+(?!\d))"), (m) => '.')} đ';
+    '${v.toString().replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (m) => '.')} đ';
 
 class Photographer {
   final String id;
+  final String ownerId;
   final String name;
   final String location;
   final double rating;
@@ -13,10 +24,15 @@ class Photographer {
   final String description;
   final int experienceYears;
   final List<String> availability;
-  final Map<String, int> pricing;
+  final Map<String, dynamic> pricing;
+  final List<String> images;
+  final int reviews;
+  final List<Map<String, dynamic>> reviewsList;
+  final int orderCount;
 
   Photographer({
     required this.id,
+    required this.ownerId,
     required this.name,
     required this.location,
     required this.rating,
@@ -26,61 +42,12 @@ class Photographer {
     required this.experienceYears,
     required this.availability,
     required this.pricing,
+    required this.images,
+    required this.reviews,
+    required this.reviewsList,
+    required this.orderCount,
   });
 }
-
-final List<Photographer> mockPhotographers = [
-  Photographer(
-    id: 'p1',
-    name: 'Nguyễn Văn A',
-    location: 'Hà Nội',
-    rating: 4.8,
-    pricePerHour: 500000,
-    imageUrl:
-        'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=800',
-    description:
-        'Thợ chụp chuyên nghiệp, có kinh nghiệm chụp cưới, sự kiện và studio. Mang theo thiết bị cao cấp và phong cách nhẹ nhàng.',
-    experienceYears: 8,
-    availability: ['T2-T6: 9:00-18:00', 'T7: 8:00-20:00'],
-    pricing: {
-      'Giá/giờ': 500000,
-      'Phí di chuyển': 100000,
-      'Hậu kỳ (tùy chọn)': 150000,
-    },
-  ),
-  Photographer(
-    id: 'p2',
-    name: 'Trần Thị B',
-    location: 'Hồ Chí Minh',
-    rating: 4.6,
-    pricePerHour: 450000,
-    imageUrl:
-        'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=800',
-    description:
-        'Đa phong cách: từ đời thường đến thời trang. Hậu kỳ nhanh, phong cách màu sắc tươi sáng.',
-    experienceYears: 5,
-    availability: ['T2-T7: 10:00-19:00'],
-    pricing: {'Giá/giờ': 450000, 'Phí di chuyển': 80000},
-  ),
-  Photographer(
-    id: 'p3',
-    name: 'Lê Văn C',
-    location: 'Đà Nẵng',
-    rating: 4.9,
-    pricePerHour: 650000,
-    imageUrl:
-        'https://images.unsplash.com/photo-1507120410856-1f35574c3b45?w=800',
-    description:
-        'Photographer hướng tới cảm xúc, chuyên chụp ngoại cảnh và phóng sự cưới. Chuyên nghiệp và thân thiện.',
-    experienceYears: 10,
-    availability: ['T2-T6: 8:00-17:00', 'T7: 7:00-21:00'],
-    pricing: {
-      'Giá/giờ': 650000,
-      'Phí di chuyển': 120000,
-      'Phí chụp ngoại cảnh': 200000,
-    },
-  ),
-];
 
 class ThuethochupanhPage extends StatefulWidget {
   const ThuethochupanhPage({super.key});
@@ -90,37 +57,6 @@ class ThuethochupanhPage extends StatefulWidget {
 }
 
 class _ThuethochupanhPageState extends State<ThuethochupanhPage> {
-  String _search = '';
-  String _selectedFilter = 'Tất cả';
-  String _sortBy = 'Mặc định';
-
-  List<Photographer> get filtered {
-    final q = _search.toLowerCase();
-    var list = mockPhotographers.where((p) {
-      final matchesQuery =
-          p.name.toLowerCase().contains(q) ||
-          p.location.toLowerCase().contains(q);
-      final matchesFilter =
-          _selectedFilter == 'Tất cả' || p.location == _selectedFilter;
-      return matchesQuery && matchesFilter;
-    }).toList();
-
-    if (_sortBy == 'Giá: thấp → cao') {
-      list.sort((a, b) => a.pricePerHour.compareTo(b.pricePerHour));
-    } else if (_sortBy == 'Đánh giá') {
-      list.sort((a, b) => b.rating.compareTo(a.rating));
-    }
-    return list;
-  }
-
-  final List<String> _locations = [
-    'Tất cả',
-    'Hà Nội',
-    'Hồ Chí Minh',
-    'Đà Nẵng',
-  ];
-  final List<String> _sortOptions = ['Mặc định', 'Giá: thấp → cao', 'Đánh giá'];
-
   @override
   Widget build(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
@@ -132,6 +68,23 @@ class _ThuethochupanhPageState extends State<ThuethochupanhPage> {
         centerTitle: true,
         elevation: 2,
         backgroundColor: Colors.deepPurple,
+        foregroundColor: Colors.white,
+        actions: [
+          IconButton(
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const DonHangCuaBanPage(
+                    serviceType: 'photographer_rental',
+                  ),
+                ),
+              );
+            },
+            icon: const Icon(Icons.history),
+            tooltip: 'Lịch sử đặt',
+          ),
+        ],
       ),
       body: SafeArea(
         child: Padding(
@@ -141,22 +94,123 @@ class _ThuethochupanhPageState extends State<ThuethochupanhPage> {
             children: [
               _buildSearchBar(),
               const SizedBox(height: 12),
-              _buildFilters(),
-              const SizedBox(height: 12),
               Expanded(
-                child: GridView.builder(
-                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: crossAxis,
-                    childAspectRatio: 3 / 2,
-                    crossAxisSpacing: 12,
-                    mainAxisSpacing: 12,
+                child: StreamBuilder<List<Map<String, dynamic>>>(
+                  stream: FirebaseBusinessService().streamServices(
+                    collectionName: 'business_photographer_services',
                   ),
-                  itemCount: filtered.length,
-                  itemBuilder: (context, index) {
-                    final p = filtered[index];
-                    return _PhotographerCard(
-                      photographer: p,
-                      onTap: () => _openDetail(p),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+
+                    final items = snapshot.data ?? [];
+                    final photographers = items
+                        .where((it) => it['status'] == 'active')
+                        .map((it) {
+                          final extra =
+                              it['extra'] as Map<String, dynamic>? ?? {};
+                          return Photographer(
+                            id: it['id'] as String,
+                            ownerId: (it['ownerId'] ?? '').toString(),
+                            name: it['name'] as String? ?? 'Thợ chụp ảnh',
+                            location: it['address'] as String? ?? '',
+                            rating:
+                                (extra['rating'] as num?)?.toDouble() ?? 0.0,
+                            reviews: (extra['reviews'] as num?)?.toInt() ?? 0,
+                            reviewsList: extra['reviewsList'] is List
+                                ? List<Map<String, dynamic>>.from(
+                                    extra['reviewsList'],
+                                  )
+                                : <Map<String, dynamic>>[],
+                            pricePerHour: (it['price'] as num?)?.toInt() ?? 0,
+                            imageUrl:
+                                extra['imageUrl'] as String? ??
+                                'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=800',
+                            description: it['description'] as String? ?? '',
+                            experienceYears:
+                                (extra['experienceYears'] as num?)?.toInt() ??
+                                0,
+                            availability: extra['availability'] is List
+                                ? (extra['availability'] as List)
+                                      .map((e) => e.toString())
+                                      .toList()
+                                : ['Tất cả các ngày'],
+                            pricing: {
+                              'Giá/giờ': (it['price'] as num?)?.toInt() ?? 0,
+                              'Gói': extra['package'] ?? 'N/A',
+                              'Phong cách': extra['style'] ?? 'Đa dạng',
+                            },
+                            images: extra['images'] is List
+                                ? (extra['images'] as List)
+                                      .map((e) => e.toString())
+                                      .toList()
+                                : [
+                                    extra['imageUrl'] as String? ??
+                                        'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=800',
+                                  ],
+                            orderCount:
+                                (it['orderCount'] as num?)?.toInt() ??
+                                (extra['orderCount'] as num?)?.toInt() ??
+                                0,
+                          );
+                        })
+                        .toList();
+
+                    var filtered = photographers.toList();
+
+                    if (filtered.isEmpty) {
+                      return const Center(
+                        child: Text('Không tìm thấy thợ chụp ảnh nào.'),
+                      );
+                    }
+
+                    return GridView.builder(
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: crossAxis,
+                        childAspectRatio: 3 / 2,
+                        crossAxisSpacing: 12,
+                        mainAxisSpacing: 12,
+                      ),
+                      itemCount: filtered.length,
+                      itemBuilder: (context, index) {
+                        final p = filtered[index];
+                        Widget cardWidget = _PhotographerCard(
+                          photographer: p,
+                          onTap: () => _openDetail(p),
+                        );
+
+                        final ownerId = p.ownerId;
+                        if (ownerId.isNotEmpty) {
+                          Widget currentCard = cardWidget;
+                          cardWidget =
+                              StreamBuilder<
+                                DocumentSnapshot<Map<String, dynamic>>
+                              >(
+                                stream: FirebaseFirestore.instance
+                                    .collection('user_profiles')
+                                    .doc(ownerId)
+                                    .snapshots(),
+                                builder: (context, profileSnap) {
+                                  final profileData =
+                                      profileSnap.data?.data() ?? {};
+                                  final businessProfile =
+                                      (profileData['businessProfile']
+                                          as Map<String, dynamic>?) ??
+                                      {};
+                                  final isOpen =
+                                      businessProfile['isOpen'] as bool? ??
+                                      true;
+                                  return Opacity(
+                                    opacity: isOpen ? 1.0 : 0.5,
+                                    child: currentCard,
+                                  );
+                                },
+                              );
+                        }
+
+                        return cardWidget;
+                      },
                     );
                   },
                 ),
@@ -169,60 +223,41 @@ class _ThuethochupanhPageState extends State<ThuethochupanhPage> {
   }
 
   Widget _buildSearchBar() {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      child: Row(
-        children: [
-          const Icon(Icons.search, color: Colors.grey),
-          const SizedBox(width: 8),
-          Expanded(
-            child: TextField(
-              decoration: const InputDecoration(
-                border: InputBorder.none,
-                hintText: 'Tìm tên hoặc địa điểm',
-              ),
-              onChanged: (v) => setState(() => _search = v),
-            ),
-          ),
-          PopupMenuButton<String>(
-            icon: const Icon(Icons.sort, color: Colors.grey),
-            itemBuilder: (_) => _sortOptions
-                .map((s) => PopupMenuItem(value: s, child: Text(s)))
-                .toList(),
-            onSelected: (s) => setState(() => _sortBy = s),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildFilters() {
-    return Row(
-      children: _locations.map((loc) {
-        final selected =
-            _selectedFilter == loc ||
-            (loc == 'Tất cả' && _selectedFilter == 'Tất cả');
-        return Padding(
-          padding: const EdgeInsets.only(right: 8.0),
-          child: ChoiceChip(
-            label: Text(loc),
-            selected: selected,
-            onSelected: (_) => setState(() => _selectedFilter = loc),
-            selectedColor: Colors.deepPurple.shade100,
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const _PhotographerSearchPage(),
           ),
         );
-      }).toList(),
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 12,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.search, color: Colors.deepPurple),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Tìm tên hoặc địa điểm',
+                style: TextStyle(color: Colors.grey.shade500, fontSize: 15),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -265,7 +300,10 @@ class _PhotographerCard extends StatelessWidget {
                       top: Radius.circular(12),
                     ),
                     image: DecorationImage(
-                      image: NetworkImage(photographer.imageUrl),
+                      image:
+                          getImageProvider(photographer.imageUrl) ??
+                          const AssetImage('assets/images/placeholder.jpg')
+                              as ImageProvider,
                       fit: BoxFit.cover,
                     ),
                   ),
@@ -284,6 +322,8 @@ class _PhotographerCard extends StatelessWidget {
                         Text(
                           photographer.name,
                           style: const TextStyle(fontWeight: FontWeight.bold),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                         const SizedBox(height: 4),
                         Text(
@@ -302,11 +342,15 @@ class _PhotographerCard extends StatelessWidget {
                               color: Colors.grey.shade600,
                             ),
                             const SizedBox(width: 4),
-                            Text(
-                              photographer.location,
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey,
+                            Expanded(
+                              child: Text(
+                                photographer.location,
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                               ),
                             ),
                           ],
@@ -330,7 +374,7 @@ class _PhotographerCard extends StatelessWidget {
                       ),
                       const SizedBox(height: 6),
                       Text(
-                        '${photographer.pricePerHour.toString().replaceAllMapped(RegExp(r"\\B(?=(\\d{3})+(?!\\d))"), (m) => '.')} đ',
+                        '${photographer.pricePerHour.toString().replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (m) => '.')} đ',
                         style: const TextStyle(fontWeight: FontWeight.bold),
                       ),
                     ],
@@ -345,29 +389,64 @@ class _PhotographerCard extends StatelessWidget {
   }
 }
 
-class PhotographerDetailPage extends StatelessWidget {
+class PhotographerDetailPage extends StatefulWidget {
   final Photographer photographer;
 
   const PhotographerDetailPage({required this.photographer, super.key});
 
   @override
+  State<PhotographerDetailPage> createState() => _PhotographerDetailPageState();
+}
+
+class _PhotographerDetailPageState extends State<PhotographerDetailPage> {
+  bool _isBusy = false;
+  bool _loadingBusy = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkAvailability();
+  }
+
+  Future<void> _checkAvailability() async {
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('photographer_orders')
+          .where('photographerId', isEqualTo: widget.photographer.id)
+          .where('status', whereIn: ['pending', 'in_progress', 'upcoming'])
+          .get();
+      if (mounted) {
+        setState(() {
+          _isBusy = snap.docs.isNotEmpty;
+          _loadingBusy = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _loadingBusy = false);
+      }
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final photographer = widget.photographer;
+    final isOwner =
+        FirebaseAuth.instance.currentUser?.uid == photographer.ownerId;
+
     return Scaffold(
       appBar: AppBar(
         title: Text(photographer.name),
         backgroundColor: Colors.deepPurple,
+        foregroundColor: Colors.white,
       ),
       body: SingleChildScrollView(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Hero(
-              tag: photographer.id,
-              child: Image.network(
-                photographer.imageUrl,
-                height: 260,
-                fit: BoxFit.cover,
-              ),
+            SizedBox(
+              height: 260,
+              child: ImageCarousel(images: photographer.images),
             ),
             Padding(
               padding: const EdgeInsets.all(16.0),
@@ -377,32 +456,36 @@ class PhotographerDetailPage extends StatelessWidget {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            photographer.name,
-                            style: const TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              photographer.name,
+                              style: const TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 6),
-                          Row(
-                            children: [
-                              const Icon(
-                                Icons.place,
-                                size: 14,
-                                color: Colors.grey,
-                              ),
-                              const SizedBox(width: 6),
-                              Text(
-                                photographer.location,
-                                style: const TextStyle(color: Colors.grey),
-                              ),
-                            ],
-                          ),
-                        ],
+                            const SizedBox(height: 6),
+                            Row(
+                              children: [
+                                const Icon(
+                                  Icons.place,
+                                  size: 14,
+                                  color: Colors.grey,
+                                ),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    photographer.location,
+                                    style: const TextStyle(color: Colors.grey),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
                       ),
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.end,
@@ -416,7 +499,7 @@ class PhotographerDetailPage extends StatelessWidget {
                           ),
                           const SizedBox(height: 6),
                           Text(
-                            '${photographer.pricePerHour.toString().replaceAllMapped(RegExp(r"\\B(?=(\\d{3})+(?!\\d))"), (m) => '.')} đ/giờ',
+                            '${photographer.pricePerHour.toString().replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (m) => '.')} đ/giờ',
                             style: const TextStyle(fontWeight: FontWeight.bold),
                           ),
                         ],
@@ -424,6 +507,102 @@ class PhotographerDetailPage extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 16),
+                  if (photographer.ownerId.isNotEmpty) ...[
+                    FutureBuilder<DocumentSnapshot>(
+                      future: FirebaseFirestore.instance
+                          .collection('user_profiles')
+                          .doc(photographer.ownerId)
+                          .get(),
+                      builder: (context, snapshot) {
+                        if (!snapshot.hasData) return const SizedBox();
+                        final data =
+                            snapshot.data!.data() as Map<String, dynamic>?;
+                        if (data == null) return const SizedBox();
+
+                        final businessProfile =
+                            data['businessProfile'] as Map<String, dynamic>? ??
+                            {};
+                        final ownerProfile =
+                            data['ownerProfile'] as Map<String, dynamic>? ?? {};
+
+                        String _getValidString(
+                          List<String?> values,
+                          String defaultValue,
+                        ) {
+                          for (final v in values) {
+                            if (v != null && v.trim().isNotEmpty)
+                              return v.trim();
+                          }
+                          return defaultValue;
+                        }
+
+                        final storeName = _getValidString([
+                          businessProfile['name'] as String?,
+                          ownerProfile['name'] as String?,
+                          data['fullName'] as String?,
+                        ], 'Người đăng');
+
+                        final media =
+                            businessProfile['media'] as Map<String, dynamic>? ??
+                            {};
+                        final avatar = _getValidString([
+                          media['avatarPath'] as String?,
+                          media['avatar'] as String?,
+                          data['avatar'] as String?,
+                          data['photoURL'] as String?,
+                          data['photoUrl'] as String?,
+                        ], '');
+
+                        final address = _getValidString([
+                          businessProfile['address'] as String?,
+                        ], 'Người đăng');
+
+                        String displayAddress = address;
+                        if (address != 'Người đăng') {
+                          final parts = address
+                              .split(',')
+                              .map((e) => e.trim())
+                              .toList();
+                          if (parts.length >= 2) {
+                            displayAddress =
+                                '${parts[parts.length - 2]}, ${parts.last}';
+                          }
+                        }
+
+                        return ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: CircleAvatar(
+                            backgroundImage: avatar.isNotEmpty
+                                ? getImageProvider(avatar)
+                                : null,
+                            child: avatar.isEmpty
+                                ? const Icon(Icons.person)
+                                : null,
+                          ),
+                          title: Text(
+                            storeName,
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          subtitle: Text(
+                            displayAddress,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => BusinessProfilePage(
+                                  ownerId: photographer.ownerId,
+                                ),
+                              ),
+                            );
+                          },
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                  ],
                   Text(
                     photographer.description,
                     style: const TextStyle(height: 1.4),
@@ -440,6 +619,20 @@ class PhotographerDetailPage extends StatelessWidget {
                       Text(
                         '${photographer.experienceYears} năm kinh nghiệm',
                         style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      const SizedBox(width: 16),
+                      const Icon(
+                        Icons.check_circle_outline,
+                        size: 18,
+                        color: Colors.green,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Đã đặt: ${photographer.orderCount}',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.green,
+                        ),
                       ),
                     ],
                   ),
@@ -480,8 +673,12 @@ class PhotographerDetailPage extends StatelessWidget {
                                   mainAxisAlignment:
                                       MainAxisAlignment.spaceBetween,
                                   children: [
-                                    Text(e.key),
-                                    Text(formatCurrency(e.value)),
+                                    Expanded(child: Text(e.key)),
+                                    Text(
+                                      e.value is num
+                                          ? formatCurrency(e.value as int)
+                                          : e.value.toString(),
+                                    ),
                                   ],
                                 ),
                               ),
@@ -491,51 +688,125 @@ class PhotographerDetailPage extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 20),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          icon: const Icon(Icons.message),
-                          label: const Text('Nhắn tin'),
-                          onPressed: () =>
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text(
-                                    'Tính năng nhắn tin tạm thời chưa hỗ trợ',
+                  const Text(
+                    'Đánh giá',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  ),
+                  const SizedBox(height: 12),
+                  if (photographer.reviewsList.isEmpty)
+                    const Text('Chưa có đánh giá nào.')
+                  else
+                    ...photographer.reviewsList.map((r) {
+                      return Card(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  CircleAvatar(
+                                    child: Text(
+                                      (r['author'] as String?)
+                                              ?.substring(0, 1)
+                                              .toUpperCase() ??
+                                          'U',
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.spaceBetween,
+                                          children: [
+                                            Text(
+                                              r['author'] as String? ?? 'User',
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                            Row(
+                                              children: [
+                                                const Icon(
+                                                  Icons.star,
+                                                  size: 14,
+                                                  color: Colors.amber,
+                                                ),
+                                                Text(
+                                                  ' ${(r['rating'] as num?)?.toDouble() ?? 5.0}',
+                                                ),
+                                              ],
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 8),
+                                        Text(r['text'] as String? ?? ''),
+                                        const SizedBox(height: 8),
+                                        Text(
+                                          r['date'] as String? ?? '',
+                                          style: const TextStyle(
+                                            color: Colors.grey,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  const SizedBox(height: 20),
+                  if (!isOwner)
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        icon: _loadingBusy
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(
+                                Icons.event_available,
+                                color: Colors.white,
+                              ),
+                        label: Text(
+                          _loadingBusy
+                              ? 'Đang kiểm tra...'
+                              : (_isBusy ? 'Đang bận' : 'Đặt lịch'),
+                          style: const TextStyle(color: Colors.white),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _isBusy
+                              ? Colors.grey
+                              : Colors.deepPurple,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                        onPressed: _loadingBusy || _isBusy
+                            ? null
+                            : () => Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => PhotographerBookingPage(
+                                    photographer: photographer,
+                                    onSuccess: _checkAvailability,
                                   ),
                                 ),
                               ),
-                        ),
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          icon: const Icon(Icons.event_available),
-                          label: const Text('Đặt lịch'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.deepPurple,
-                          ),
-                          onPressed: () => showModalBottomSheet(
-                            context: context,
-                            isScrollControlled: true,
-                            shape: const RoundedRectangleBorder(
-                              borderRadius: BorderRadius.vertical(
-                                top: Radius.circular(16),
-                              ),
-                            ),
-                            builder: (_) => Padding(
-                              padding: EdgeInsets.only(
-                                bottom: MediaQuery.of(
-                                  context,
-                                ).viewInsets.bottom,
-                              ),
-                              child: BookingForm(photographer: photographer),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
+                    ),
                 ],
               ),
             ),
@@ -546,166 +817,270 @@ class PhotographerDetailPage extends StatelessWidget {
   }
 }
 
-class BookingForm extends StatefulWidget {
-  final Photographer photographer;
-
-  const BookingForm({required this.photographer, super.key});
+class _PhotographerSearchPage extends StatefulWidget {
+  const _PhotographerSearchPage();
 
   @override
-  State<BookingForm> createState() => _BookingFormState();
+  State<_PhotographerSearchPage> createState() =>
+      _PhotographerSearchPageState();
 }
 
-class _BookingFormState extends State<BookingForm> {
-  final _formKey = GlobalKey<FormState>();
-  final _nameCtrl = TextEditingController();
-  final _phoneCtrl = TextEditingController();
-  DateTime? _date;
-  TimeOfDay? _time;
+class _PhotographerSearchPageState extends State<_PhotographerSearchPage> {
+  final TextEditingController _searchController = TextEditingController();
+  List<Photographer> _allItems = [];
+  List<Photographer> _filtered = [];
+  List<String> _history = [];
+  bool _hasSubmitted = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadHistory();
+    _loadItems();
+    _searchController.addListener(_onSearchChanged);
+  }
+
+  void _loadItems() {
+    FirebaseBusinessService()
+        .streamServices(collectionName: 'business_photographer_services')
+        .listen((items) {
+          if (!mounted) return;
+          final photographers = items.where((it) => it['status'] == 'active').map((
+            it,
+          ) {
+            final extra = it['extra'] as Map<String, dynamic>? ?? {};
+            return Photographer(
+              id: it['id'] as String,
+              ownerId: (it['ownerId'] ?? '').toString(),
+              name: it['name'] as String? ?? 'Thợ chụp ảnh',
+              location: it['address'] as String? ?? '',
+              rating: (extra['rating'] as num?)?.toDouble() ?? 0.0,
+              reviews: (extra['reviews'] as num?)?.toInt() ?? 0,
+              reviewsList: extra['reviewsList'] is List
+                  ? List<Map<String, dynamic>>.from(extra['reviewsList'])
+                  : <Map<String, dynamic>>[],
+              pricePerHour: (it['price'] as num?)?.toInt() ?? 0,
+              imageUrl:
+                  extra['imageUrl'] as String? ??
+                  'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=800',
+              description: it['description'] as String? ?? '',
+              experienceYears: (extra['experienceYears'] as num?)?.toInt() ?? 0,
+              availability: extra['availability'] is List
+                  ? (extra['availability'] as List)
+                        .map((e) => e.toString())
+                        .toList()
+                  : ['Tất cả các ngày'],
+              pricing: {
+                'Giá/giờ': (it['price'] as num?)?.toInt() ?? 0,
+                'Gói': extra['package'] ?? 'N/A',
+                'Phong cách': extra['style'] ?? 'Đa dạng',
+              },
+              images: extra['images'] is List
+                  ? (extra['images'] as List).map((e) => e.toString()).toList()
+                  : [
+                      extra['imageUrl'] as String? ??
+                          'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=800',
+                    ],
+              orderCount:
+                  (it['orderCount'] as num?)?.toInt() ??
+                  (extra['orderCount'] as num?)?.toInt() ??
+                  0,
+            );
+          }).toList();
+          setState(() {
+            _allItems = photographers;
+            _applyFilters();
+          });
+        });
+  }
+
+  void _onSearchChanged() {
+    if (_searchController.text.isEmpty && _hasSubmitted) {
+      _hasSubmitted = false;
+    }
+    _applyFilters();
+  }
+
+  void _submitSearch(String query) {
+    if (query.trim().isEmpty) return;
+    _saveHistory(query);
+    setState(() {
+      _hasSubmitted = true;
+    });
+  }
+
+  Future<void> _loadHistory() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) {
+      setState(() {
+        _history = prefs.getStringList('photographer_search_history') ?? [];
+      });
+    }
+  }
+
+  Future<void> _saveHistory(String query) async {
+    final prefs = await SharedPreferences.getInstance();
+    _history.remove(query);
+    _history.insert(0, query);
+    if (_history.length > 10) _history = _history.sublist(0, 10);
+    await prefs.setStringList('photographer_search_history', _history);
+    if (mounted) setState(() {});
+  }
+
+  void _clearHistory() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('photographer_search_history');
+    if (mounted) setState(() => _history.clear());
+  }
+
+  void _removeHistoryItem(String item) async {
+    final prefs = await SharedPreferences.getInstance();
+    _history.remove(item);
+    await prefs.setStringList('photographer_search_history', _history);
+    if (mounted) setState(() {});
+  }
+
+  void _applyFilters() {
+    final q = _searchController.text.trim().toLowerCase();
+    setState(() {
+      _filtered = _allItems.where((it) {
+        final matchesQ =
+            q.isEmpty ||
+            it.name.toLowerCase().contains(q) ||
+            it.location.toLowerCase().contains(q);
+        return matchesQ;
+      }).toList();
+    });
+  }
 
   @override
   void dispose() {
-    _nameCtrl.dispose();
-    _phoneCtrl.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+    return Scaffold(
+      backgroundColor: Colors.grey[50],
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        iconTheme: const IconThemeData(color: Colors.black87),
+        title: TextField(
+          controller: _searchController,
+          autofocus: true,
+          decoration: InputDecoration(
+            hintText: 'Tìm thợ hoặc địa điểm',
+            hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 15),
+            border: InputBorder.none,
+            suffixIcon: _searchController.text.isNotEmpty
+                ? IconButton(
+                    icon: const Icon(Icons.clear, color: Colors.grey, size: 20),
+                    onPressed: () {
+                      _searchController.clear();
+                      setState(() => _hasSubmitted = false);
+                    },
+                  )
+                : null,
+          ),
+          onSubmitted: _submitSearch,
+          textInputAction: TextInputAction.search,
+        ),
+      ),
+      body: Column(
         children: [
-          Center(
-            child: Container(
-              height: 4,
-              width: 40,
-              decoration: BoxDecoration(
-                color: Colors.grey[300],
-                borderRadius: BorderRadius.circular(4),
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            'Đặt lịch với ${widget.photographer.name}',
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 12),
-          Form(
-            key: _formKey,
-            child: Column(
-              children: [
-                TextFormField(
-                  controller: _nameCtrl,
-                  decoration: const InputDecoration(labelText: 'Tên của bạn'),
-                  validator: (v) =>
-                      v == null || v.isEmpty ? 'Vui lòng nhập tên' : null,
-                ),
-                const SizedBox(height: 8),
-                TextFormField(
-                  controller: _phoneCtrl,
-                  keyboardType: TextInputType.phone,
-                  decoration: const InputDecoration(labelText: 'Số điện thoại'),
-                  validator: (v) => v == null || v.length < 9
-                      ? 'Số điện thoại không hợp lệ'
-                      : null,
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: _pickDate,
-                        child: Text(
-                          _date == null
-                              ? 'Chọn ngày'
-                              : '${_date!.day}/${_date!.month}/${_date!.year}',
+          Container(height: 1, color: Colors.grey.shade200),
+          if (!_hasSubmitted &&
+              _searchController.text.isEmpty &&
+              _history.isNotEmpty)
+            Expanded(
+              child: ListView(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'Tìm kiếm gần đây',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 15,
+                          ),
                         ),
-                      ),
+                        TextButton(
+                          onPressed: _clearHistory,
+                          child: const Text('Xóa lịch sử'),
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: _pickTime,
-                        child: Text(
-                          _time == null ? 'Chọn giờ' : _time!.format(context),
-                        ),
-                      ),
+                  ),
+                  Wrap(
+                    spacing: 8,
+                    children: _history.map((h) {
+                      return ActionChip(
+                        label: Text(h),
+                        onPressed: () {
+                          _searchController.text = h;
+                          _submitSearch(h);
+                        },
+                      );
+                    }).toList(),
+                  ),
+                ],
+              ),
+            )
+          else if (_filtered.isEmpty)
+            Expanded(
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.search_off,
+                      size: 64,
+                      color: Colors.grey.shade300,
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Không tìm thấy thợ chụp ảnh nào',
+                      style: TextStyle(color: Colors.grey.shade600),
                     ),
                   ],
                 ),
-                const SizedBox(height: 12),
-                ElevatedButton(
-                  onPressed: _submit,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.deepPurple,
-                  ),
-                  child: const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 12),
-                    child: Text('Xác nhận đặt lịch'),
-                  ),
+              ),
+            )
+          else
+            Expanded(
+              child: GridView.builder(
+                padding: const EdgeInsets.all(16),
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: MediaQuery.of(context).size.width > 600
+                      ? 3
+                      : 2,
+                  childAspectRatio: 3 / 2,
+                  crossAxisSpacing: 12,
+                  mainAxisSpacing: 12,
                 ),
-              ],
+                itemCount: _filtered.length,
+                itemBuilder: (context, index) {
+                  final p = _filtered[index];
+                  return _PhotographerCard(
+                    photographer: p,
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) =>
+                              PhotographerDetailPage(photographer: p),
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
             ),
-          ),
-          const SizedBox(height: 8),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _pickDate() async {
-    final now = DateTime.now();
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: now,
-      firstDate: now,
-      lastDate: DateTime(now.year + 1),
-    );
-    if (picked != null) setState(() => _date = picked);
-  }
-
-  Future<void> _pickTime() async {
-    final picked = await showTimePicker(
-      context: context,
-      initialTime: TimeOfDay.now(),
-    );
-    if (picked != null) setState(() => _time = picked);
-  }
-
-  void _submit() {
-    if (!_formKey.currentState!.validate()) return;
-    if (_date == null || _time == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Vui lòng chọn ngày và giờ')),
-      );
-      return;
-    }
-
-    final datetime = DateTime(
-      _date!.year,
-      _date!.month,
-      _date!.day,
-      _time!.hour,
-      _time!.minute,
-    );
-
-    Navigator.of(context).pop();
-
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Xác nhận'),
-        content: Text(
-          'Đặt lịch thành công với ${widget.photographer.name} vào ${datetime.day}/${datetime.month}/${datetime.year} - ${_time!.format(context)}',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Đóng'),
-          ),
         ],
       ),
     );

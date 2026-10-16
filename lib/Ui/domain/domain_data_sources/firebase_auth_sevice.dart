@@ -18,14 +18,14 @@ class FirebaseAuthService {
     try {
       await _auth.signInWithEmailAndPassword(email: email, password: password);
     } on FirebaseAuthException catch (e) {
-      throw Exception(e.message);
+      rethrow;
     }
   }
 
   // HÀM ĐĂNG KÝ TÀI KHOẢN MỚI VỚI EMAIL
   /// Tạo tài khoản mới với email và password
   /// Sau khi tạo xong sẽ tự động gửi email xác thực
-  Future<void> createUserWithEmailAndPassword({
+  Future<UserCredential?> createUserWithEmailAndPassword({
     required String email,
     required String password,
   }) async {
@@ -36,8 +36,10 @@ class FirebaseAuthService {
 
       // Gửi email xác thực sau khi tạo tài khoản
       await userCredential.user?.sendEmailVerification();
+
+      return userCredential;
     } on FirebaseAuthException catch (e) {
-      throw Exception(e.message);
+      rethrow;
     }
   }
 
@@ -50,7 +52,7 @@ class FirebaseAuthService {
         await user.sendEmailVerification();
       }
     } on FirebaseAuthException catch (e) {
-      throw Exception(e.message);
+      rethrow;
     }
   }
 
@@ -180,7 +182,7 @@ class FirebaseAuthService {
 
       return userCredential;
     } on FirebaseAuthException catch (e) {
-      throw Exception(e.message ?? 'Mã OTP không đúng');
+      rethrow;
     }
   }
 
@@ -191,7 +193,7 @@ class FirebaseAuthService {
     try {
       return await _auth.signInWithCredential(credential);
     } on FirebaseAuthException catch (e) {
-      throw Exception(e.message);
+      rethrow;
     }
   }
 
@@ -222,7 +224,7 @@ class FirebaseAuthService {
       await user.reauthenticateWithCredential(cred);
       await user.updatePassword(newPassword);
     } on FirebaseAuthException catch (e) {
-      throw Exception(e.message ?? 'Lỗi cập nhật mật khẩu');
+      rethrow;
     }
   }
 }

@@ -41,58 +41,48 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'AIzaSyCepnJgsibwzX0VGw0N9wVQH4e4rVAF_ks',
-    appId: '1:1009935937244:web:efcf5d2befa9a473158e19',
-    messagingSenderId: '1009935937244',
-    projectId: 'trip-995d7',
-    authDomain: 'trip-995d7.firebaseapp.com',
-    databaseURL:
-        'https://trip-995d7-default-rtdb.asia-southeast1.firebasedatabase.app',
-    storageBucket: 'trip-995d7.firebasestorage.app',
-    measurementId: 'G-F8NL0N8RRZ',
+    apiKey: 'AIzaSyA61eZBFyEtvMcB6tF-yTR0C4GkLRofFLA',
+    appId: '1:857914473616:web:6e6f65ab8463d81434ec15',
+    messagingSenderId: '857914473616',
+    projectId: 'dacs-c7048',
+    authDomain: 'dacs-c7048.firebaseapp.com',
+    storageBucket: 'dacs-c7048.firebasestorage.app',
+    measurementId: 'G-VHG29YRNEX',
   );
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyAjIZN4BRMgLmab4lH-IjQ3TQY7_VJ5oNA',
-    appId: '1:1009935937244:android:34175ef7b6230501158e19',
-    messagingSenderId: '1009935937244',
-    projectId: 'trip-995d7',
-    databaseURL:
-        'https://trip-995d7-default-rtdb.asia-southeast1.firebasedatabase.app',
-    storageBucket: 'trip-995d7.firebasestorage.app',
+    apiKey: 'AIzaSyCi_8XhB_Yv9rZwMPoq2swGuIH4Z8q6840',
+    appId: '1:857914473616:android:e5bea13f878a6e2f34ec15',
+    messagingSenderId: '857914473616',
+    projectId: 'dacs-c7048',
+    storageBucket: 'dacs-c7048.firebasestorage.app',
   );
 
   static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'AIzaSyD6opc_Cds1u7Oh_JvcX8vPiTtBFrUwPr4',
-    appId: '1:1009935937244:ios:6029f2b6c00ca3e6158e19',
-    messagingSenderId: '1009935937244',
-    projectId: 'trip-995d7',
-    databaseURL:
-        'https://trip-995d7-default-rtdb.asia-southeast1.firebasedatabase.app',
-    storageBucket: 'trip-995d7.firebasestorage.app',
+    apiKey: 'AIzaSyB8Nu4V75X8Ar75tQU0ff4uF2HBQOf2v-U',
+    appId: '1:857914473616:ios:599ebac1b8c3ad0b34ec15',
+    messagingSenderId: '857914473616',
+    projectId: 'dacs-c7048',
+    storageBucket: 'dacs-c7048.firebasestorage.app',
     iosBundleId: 'com.example.tourn',
   );
 
   static const FirebaseOptions macos = FirebaseOptions(
-    apiKey: 'AIzaSyD6opc_Cds1u7Oh_JvcX8vPiTtBFrUwPr4',
-    appId: '1:1009935937244:ios:6029f2b6c00ca3e6158e19',
-    messagingSenderId: '1009935937244',
-    projectId: 'trip-995d7',
-    databaseURL:
-        'https://trip-995d7-default-rtdb.asia-southeast1.firebasedatabase.app',
-    storageBucket: 'trip-995d7.firebasestorage.app',
+    apiKey: 'AIzaSyB8Nu4V75X8Ar75tQU0ff4uF2HBQOf2v-U',
+    appId: '1:857914473616:ios:599ebac1b8c3ad0b34ec15',
+    messagingSenderId: '857914473616',
+    projectId: 'dacs-c7048',
+    storageBucket: 'dacs-c7048.firebasestorage.app',
     iosBundleId: 'com.example.tourn',
   );
 
   static const FirebaseOptions windows = FirebaseOptions(
-    apiKey: 'AIzaSyCepnJgsibwzX0VGw0N9wVQH4e4rVAF_ks',
-    appId: '1:1009935937244:web:8004f26bfdb1af93158e19',
-    messagingSenderId: '1009935937244',
-    projectId: 'trip-995d7',
-    authDomain: 'trip-995d7.firebaseapp.com',
-    databaseURL:
-        'https://trip-995d7-default-rtdb.asia-southeast1.firebasedatabase.app',
-    storageBucket: 'trip-995d7.firebasestorage.app',
-    measurementId: 'G-GS151Z3D45',
+    apiKey: 'AIzaSyA61eZBFyEtvMcB6tF-yTR0C4GkLRofFLA',
+    appId: '1:857914473616:web:692f0d572c5bdfa134ec15',
+    messagingSenderId: '857914473616',
+    projectId: 'dacs-c7048',
+    authDomain: 'dacs-c7048.firebaseapp.com',
+    storageBucket: 'dacs-c7048.firebasestorage.app',
+    measurementId: 'G-WKE63KF199',
   );
 }

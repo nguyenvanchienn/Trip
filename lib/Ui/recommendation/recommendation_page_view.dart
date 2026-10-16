@@ -4,6 +4,7 @@ import 'package:tourn/Ui/main/main_page.dart';
 import 'package:tourn/Ui/recommendation/recommendation_child_page.dart';
 import 'package:tourn/ultils.enums/recommendation_page_position.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:tourn/Ui/splash/splash.dart';
 
 /// Widget quản lý luồng hiển thị recommendation cho từng tài khoản
 /// Chỉ hiện khi user đăng nhập lần đầu (dựa vào userId)
@@ -106,9 +107,10 @@ class _recommendationpageviewState extends State<recommendationpageview> {
 
   /// Chuyển sang trang chính của app (homepage)
   void _gotowelcomepage() {
-    Navigator.pushReplacement(
+    Navigator.pushAndRemoveUntil(
       context,
-      MaterialPageRoute(builder: (context) => const Mainpage()),
+      MaterialPageRoute(builder: (context) => const SplashScreen()),
+      (route) => false,
     );
   }
 

@@ -556,9 +556,10 @@ class _loginpageState extends State<loginpage> {
           }
         }
 
-        Navigator.pushReplacement(
+        Navigator.pushAndRemoveUntil(
           context,
           MaterialPageRoute(builder: (context) => const Mainpage()),
+          (route) => false,
         );
       }
     } catch (e) {

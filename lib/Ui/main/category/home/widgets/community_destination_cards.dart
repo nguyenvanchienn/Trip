@@ -1,15 +1,19 @@
+import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 
 class CommunityDestinationCards extends StatefulWidget {
   final List<Map<String, dynamic>> posts;
   final ValueChanged<int> onToggleFavorite;
   final ValueChanged<int> onCardTap;
+  final void Function(int index, String hashtag)? onHashtagTap;
 
   const CommunityDestinationCards({
     super.key,
     required this.posts,
     required this.onToggleFavorite,
     required this.onCardTap,
+    this.onHashtagTap,
   });
 
   @override
@@ -30,6 +34,169 @@ class _CommunityDestinationCardsState extends State<CommunityDestinationCards> {
   void dispose() {
     _pageController.dispose();
     super.dispose();
+  }
+
+  // Check if URL is a video
+  bool _isVideoUrl(String url) {
+    final lower = url.toLowerCase();
+    return lower.endsWith('.mp4') ||
+        lower.endsWith('.mov') ||
+        lower.endsWith('.avi') ||
+        lower.endsWith('.webm') ||
+        lower.contains('video');
+  }
+
+  // Parse background color from string
+  Color _parseBackgroundColor(String? backgroundColor) {
+    if (backgroundColor == null || backgroundColor.isEmpty) {
+      return const Color(0xFF667788); // Default gradient color
+    }
+    try {
+      final colorInt = int.tryParse(backgroundColor);
+      if (colorInt != null) {
+        return Color(colorInt);
+      }
+    } catch (e) {
+      // Ignore
+    }
+    return const Color(0xFF667788);
+  }
+
+  // Build media background (image, video thumbnail, or solid color)
+  Widget _buildMediaBackground(Map<String, dynamic> post) {
+    final imageUrl = post['image'] as String? ?? '';
+    final backgroundColor = post['backgroundColor'] as String?;
+
+    // No image - show background color
+    if (imageUrl.isEmpty) {
+      return Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              _parseBackgroundColor(backgroundColor),
+              _parseBackgroundColor(backgroundColor).withOpacity(0.7),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // Base64 data URL
+    if (imageUrl.startsWith('data:')) {
+      try {
+        final base64Data = imageUrl.split(',').last;
+        final bytes = base64Decode(base64Data);
+        return Image.memory(
+          Uint8List.fromList(bytes),
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => _buildColorBackground(backgroundColor),
+        );
+      } catch (e) {
+        return _buildColorBackground(backgroundColor);
+      }
+    }
+
+    // Video URL - show thumbnail with play icon
+    if (_isVideoUrl(imageUrl)) {
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  _parseBackgroundColor(backgroundColor),
+                  Colors.black87,
+                ],
+              ),
+            ),
+          ),
+          const Center(
+            child: Icon(
+              Icons.play_circle_filled,
+              size: 64,
+              color: Colors.white70,
+            ),
+          ),
+        ],
+      );
+    }
+
+    // Network image URL
+    return Image.network(
+      imageUrl,
+      fit: BoxFit.cover,
+      loadingBuilder: (context, child, loadingProgress) {
+        if (loadingProgress == null) return child;
+        return Container(
+          color: _parseBackgroundColor(backgroundColor),
+          child: const Center(child: CircularProgressIndicator()),
+        );
+      },
+      errorBuilder: (_, __, ___) => _buildColorBackground(backgroundColor),
+    );
+  }
+
+  // Build solid color background
+  Widget _buildColorBackground(String? backgroundColor) {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            _parseBackgroundColor(backgroundColor),
+            _parseBackgroundColor(backgroundColor).withOpacity(0.7),
+          ],
+        ),
+      ),
+      child: const Center(
+        child: Icon(Icons.image, size: 50, color: Colors.white30),
+      ),
+    );
+  }
+
+  // Build avatar widget
+  Widget _buildAvatar(String avatarUrl) {
+    if (avatarUrl.isEmpty) {
+      return const Icon(Icons.person, size: 14, color: Colors.white);
+    }
+
+    // Base64 data URL
+    if (avatarUrl.startsWith('data:')) {
+      try {
+        final base64Data = avatarUrl.split(',').last;
+        final bytes = base64Decode(base64Data);
+        return ClipOval(
+          child: Image.memory(
+            Uint8List.fromList(bytes),
+            fit: BoxFit.cover,
+            width: 24,
+            height: 24,
+            errorBuilder: (_, __, ___) =>
+                const Icon(Icons.person, size: 14, color: Colors.white),
+          ),
+        );
+      } catch (e) {
+        return const Icon(Icons.person, size: 14, color: Colors.white);
+      }
+    }
+
+    // Network URL
+    return ClipOval(
+      child: Image.network(
+        avatarUrl,
+        fit: BoxFit.cover,
+        width: 24,
+        height: 24,
+        errorBuilder: (_, __, ___) =>
+            const Icon(Icons.person, size: 14, color: Colors.white),
+      ),
+    );
   }
 
   @override
@@ -62,15 +229,8 @@ class _CommunityDestinationCardsState extends State<CommunityDestinationCards> {
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
-                      // Background image
-                      Image.asset(
-                        post['image'] as String,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Container(
-                          color: Colors.grey[300],
-                          child: const Icon(Icons.image, size: 50),
-                        ),
-                      ),
+                      // Background image/video or color
+                      _buildMediaBackground(post),
                       // Gradient overlay
                       Container(
                         decoration: BoxDecoration(
@@ -89,21 +249,29 @@ class _CommunityDestinationCardsState extends State<CommunityDestinationCards> {
                       Positioned(
                         top: 16,
                         left: 16,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 6,
-                          ),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF113953),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Text(
-                            post['hashtag'] as String,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
+                        child: GestureDetector(
+                          onTap: () {
+                            final hashtag = post['hashtag'] as String;
+                            if (widget.onHashtagTap != null) {
+                              widget.onHashtagTap!(index, hashtag);
+                            }
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF113953),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(
+                              post['hashtag'] as String,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                           ),
                         ),
@@ -179,17 +347,7 @@ class _CommunityDestinationCardsState extends State<CommunityDestinationCards> {
                                       width: 1.5,
                                     ),
                                   ),
-                                  child: ClipOval(
-                                    child: Image.asset(
-                                      post['avatar'] as String,
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (_, __, ___) => const Icon(
-                                        Icons.person,
-                                        size: 14,
-                                        color: Colors.white,
-                                      ),
-                                    ),
-                                  ),
+                                  child: _buildAvatar(post['avatar'] as String),
                                 ),
                                 const SizedBox(width: 8),
                                 Text(

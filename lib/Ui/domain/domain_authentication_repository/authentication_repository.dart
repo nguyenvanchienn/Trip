@@ -1,8 +1,12 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:tourn/Ui/domain/domain_data_sources/firebase_auth_sevice.dart';
+import 'package:tourn/data/firebase/firebase_user_service.dart';
+import 'package:tourn/data/firebase/firebase_notification_service.dart';
+import 'package:tourn/models/notification_model.dart';
 
 abstract class AuthenticationRepository {
-  // Hàm đăng nhập bằng email
+  // Hàm đăng nhập bằng email (hỗ trợ cả primary và additional emails)
   Future<void> loginInWithEmailAndPassword({
     required String email,
     required String password,
@@ -12,6 +16,7 @@ abstract class AuthenticationRepository {
   Future<void> createUserWithEmailAndPassword({
     required String email,
     required String password,
+    String? displayName,
   });
 
   // Hàm gửi lại email xác thực
@@ -55,8 +60,31 @@ abstract class AuthenticationRepository {
 
 class AuthenticationRepositoryImpl extends AuthenticationRepository {
   final FirebaseAuthService firebaseAuthService;
+  final FirebaseUserService _userService = FirebaseUserService();
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseNotificationService _notificationService =
+      FirebaseNotificationService();
 
   AuthenticationRepositoryImpl({required this.firebaseAuthService});
+
+  /// Tìm user bằng additional email và trả về auth email của họ
+  Future<String?> _findAuthEmailByAdditionalEmail(String email) async {
+    try {
+      final query = await _firestore
+          .collection('users')
+          .where('additionalEmails', arrayContains: email.toLowerCase())
+          .limit(1)
+          .get();
+
+      if (query.docs.isNotEmpty) {
+        final data = query.docs.first.data();
+        return data['email'] as String?;
+      }
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
 
   @override
   Future<void> loginInWithEmailAndPassword({
@@ -64,10 +92,34 @@ class AuthenticationRepositoryImpl extends AuthenticationRepository {
     required String password,
   }) async {
     try {
-      await firebaseAuthService.loginInWithEmailAndPassword(
-        email: email,
-        password: password,
-      );
+      // Try to login with the email directly first
+      try {
+        await firebaseAuthService.loginInWithEmailAndPassword(
+          email: email,
+          password: password,
+        );
+        // Update online status after successful login
+        await _userService.setOnlineStatus(true);
+        return;
+      } on Exception {
+        // If direct login fails, check if it's an additional email
+      }
+
+      // Check if this email is in someone's additionalEmails
+      final authEmail = await _findAuthEmailByAdditionalEmail(email);
+      if (authEmail != null) {
+        // Try to login with the primary auth email
+        await firebaseAuthService.loginInWithEmailAndPassword(
+          email: authEmail,
+          password: password,
+        );
+        // Update online status after successful login
+        await _userService.setOnlineStatus(true);
+        return;
+      }
+
+      // If no match found, throw original error
+      throw Exception('Email hoặc mật khẩu không đúng');
     } catch (e) {
       rethrow;
     }
@@ -80,13 +132,60 @@ class AuthenticationRepositoryImpl extends AuthenticationRepository {
   Future<void> createUserWithEmailAndPassword({
     required String email,
     required String password,
+    String? displayName,
   }) async {
     try {
-      await firebaseAuthService.createUserWithEmailAndPassword(
-        email: email,
-        password: password,
-      );
+      print('[AuthRepo] Starting registration for $email');
+      final credential = await firebaseAuthService
+          .createUserWithEmailAndPassword(email: email, password: password);
+      print('[AuthRepo] Firebase Auth user created: ${credential?.user?.uid}');
+
+      // Tạo user document trong Firestore sau khi đăng ký thành công
+      if (credential?.user != null) {
+        // Update Firebase Auth profile with display name
+        if (displayName != null) {
+          print('[AuthRepo] Updating display name...');
+          await credential!.user!.updateDisplayName(displayName);
+          print('[AuthRepo] Display name updated');
+        }
+
+        print('[AuthRepo] Creating Firestore user document...');
+        await _userService.createUser(
+          credential!.user!,
+          displayName: displayName,
+        );
+        print('[AuthRepo] Firestore user document created');
+
+        // Gửi thông báo chào mừng (không throw lỗi nếu thất bại)
+        try {
+          print('[AuthRepo] Sending welcome notification...');
+          await _notificationService.sendSystemNotification(
+            recipientId: credential.user!.uid,
+            senderName: 'Trip',
+            message: 'Chào mừng bạn đến với Trip! Hãy bắt đầu khám phá ngay.',
+            type: NotificationType.welcome,
+          );
+          print('[AuthRepo] Welcome notification sent');
+
+          print('[AuthRepo] Sending complete-profile notification...');
+          await _notificationService.sendSystemNotification(
+            recipientId: credential.user!.uid,
+            senderName: 'Trip',
+            message:
+                'Hãy làm các bước cuối cùng để hoàn thiện hồ sơ của bạn để giúp mọi người dễ dàng kết nối, theo dõi và hiểu rõ hơn về bạn.',
+            type: NotificationType.completeProfile,
+          );
+          print('[AuthRepo] Complete-profile notification sent');
+        } catch (e) {
+          // Ignore notification errors - registration should still succeed
+          print('Warning: Failed to send welcome notification: $e');
+        }
+      }
+      print('[AuthRepo] Registration complete');
+    } on FirebaseAuthException {
+      rethrow;
     } catch (e) {
+      print('[AuthRepo] Registration error: $e');
       rethrow;
     }
   }
@@ -204,6 +303,14 @@ class AuthenticationRepositoryImpl extends AuthenticationRepository {
   // =====================================================
   @override
   Future<void> signOut() async {
+    // Update offline status without blocking logout (avoid UI hangs on slow IO)
+    Future<void>.microtask(() async {
+      try {
+        await _userService.setOnlineStatus(false);
+      } catch (_) {
+        // ignore errors on best-effort offline update
+      }
+    });
     await firebaseAuthService.signOut();
   }
 }

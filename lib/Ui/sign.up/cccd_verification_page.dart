@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:tourn/Ui/login/login.dart';
 
 // Import các file data layer để xử lý đăng ký với Firebase
@@ -421,6 +423,7 @@ class _CCCDVerificationPageState extends State<CCCDVerificationPage> {
       await _authRepository.createUserWithEmailAndPassword(
         email: email,
         password: password,
+        displayName: widget.name,
       );
 
       // Đăng ký thành công
@@ -432,12 +435,26 @@ class _CCCDVerificationPageState extends State<CCCDVerificationPage> {
           'Đăng ký tài khoản thành công!\n\nChúng tôi đã gửi email xác thực đến địa chỉ email của bạn. Vui lòng kiểm tra hộp thư và xác thực email trước khi đăng nhập.',
         );
       }
+    } on FirebaseAuthException catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+        _showErrorDialog(_mapAuthError(e));
+      }
+    } on FirebaseException catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+        _showErrorDialog('Không thể lưu hồ sơ người dùng. ${e.message ?? ''}');
+      }
     } catch (e) {
       if (mounted) {
         setState(() {
           _isLoading = false;
         });
-        _showErrorDialog('Tài khoản đã tồn tại hoặc email không hợp lệ');
+        _showErrorDialog('Không thể đăng ký. Vui lòng thử lại.');
       }
     }
   }
@@ -456,6 +473,7 @@ class _CCCDVerificationPageState extends State<CCCDVerificationPage> {
       await _authRepository.createUserWithEmailAndPassword(
         email: emailForPhone,
         password: password,
+        displayName: widget.name,
       );
 
       if (mounted) {
@@ -465,6 +483,20 @@ class _CCCDVerificationPageState extends State<CCCDVerificationPage> {
         _showSuccessDialog(
           'Đăng ký tài khoản thành công!\n\nSố điện thoại của bạn đã được xác thực.',
         );
+      }
+    } on FirebaseAuthException catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+        _showErrorDialog(_mapAuthError(e));
+      }
+    } on FirebaseException catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+        _showErrorDialog('Không thể lưu hồ sơ người dùng. ${e.message ?? ''}');
       }
     } catch (e) {
       if (mounted) {
@@ -561,5 +593,24 @@ class _CCCDVerificationPageState extends State<CCCDVerificationPage> {
         );
       },
     );
+  }
+
+  String _mapAuthError(FirebaseAuthException e) {
+    switch (e.code) {
+      case 'email-already-in-use':
+        return 'Email đã được sử dụng. Vui lòng dùng email khác.';
+      case 'invalid-email':
+        return 'Email không hợp lệ. Vui lòng kiểm tra lại.';
+      case 'weak-password':
+        return 'Mật khẩu quá yếu. Vui lòng dùng mật khẩu mạnh hơn.';
+      case 'operation-not-allowed':
+        return 'Email/Password chưa được bật trong Firebase Authentication.';
+      case 'network-request-failed':
+        return 'Không có kết nối mạng. Vui lòng thử lại.';
+      case 'too-many-requests':
+        return 'Thao tác bị giới hạn. Vui lòng thử lại sau.';
+      default:
+        return e.message ?? 'Đăng ký thất bại. Vui lòng thử lại.';
+    }
   }
 }

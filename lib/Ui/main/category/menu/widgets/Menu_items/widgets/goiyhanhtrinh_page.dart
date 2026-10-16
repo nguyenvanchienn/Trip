@@ -212,30 +212,36 @@ class _GoiYHanhTrinhPageState extends State<GoiYHanhTrinhPage> {
                                           ),
                                         ),
                                         const SizedBox(height: 6),
-                                        Row(
+                                        Wrap(
+                                          spacing: 8,
+                                          runSpacing: 4,
                                           children: [
                                             Chip(
                                               label: Text('${t['days']} ngày'),
+                                              visualDensity:
+                                                  VisualDensity.compact,
+                                              padding: EdgeInsets.zero,
                                             ),
-                                            const SizedBox(width: 8),
                                             Chip(
                                               label: Text('${t['budget']}k'),
-                                            ),
-                                            const SizedBox(width: 8),
-                                            Text(
-                                              '⭐ ${t['rating']}',
-                                              style: const TextStyle(
-                                                color: Colors.amber,
-                                              ),
+                                              visualDensity:
+                                                  VisualDensity.compact,
+                                              padding: EdgeInsets.zero,
                                             ),
                                           ],
                                         ),
                                         const SizedBox(height: 6),
                                         Wrap(
                                           spacing: 6,
+                                          runSpacing: 4,
                                           children: (t['tags'] as List)
                                               .map(
-                                                (tag) => Chip(label: Text(tag)),
+                                                (tag) => Chip(
+                                                  label: Text(tag),
+                                                  visualDensity:
+                                                      VisualDensity.compact,
+                                                  padding: EdgeInsets.zero,
+                                                ),
                                               )
                                               .toList(),
                                         ),

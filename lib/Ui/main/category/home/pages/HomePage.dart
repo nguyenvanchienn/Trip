@@ -1,20 +1,32 @@
 // đây là file chứa code của trang trang chủ trong phần home
+import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:tourn/Ui/main/category/home/pages/Newfeed.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:tourn/Ui/main/category/home/pages/FirebaseNewfeed.dart';
 import 'package:tourn/Ui/main/category/home/pages/liststory.dart';
 import 'package:tourn/Ui/main/category/home/widgets/bottom_sheet.dart';
-import 'package:tourn/Ui/main/category/home/widgets/profile.dart';
+import 'package:tourn/Ui/main/category/home/widgets/profile/Profile.dart';
 import 'package:tourn/Ui/main/category/home/widgets/search.dart';
 import 'package:tourn/Ui/main/category/home/widgets/community_header.dart';
 import 'package:tourn/Ui/main/category/home/widgets/community_search.dart';
 import 'package:tourn/Ui/main/category/home/widgets/community_section_title.dart';
 import 'package:tourn/Ui/main/category/home/widgets/community_tab_chips.dart';
 import 'package:tourn/Ui/main/category/home/widgets/community_destination_cards.dart';
-import 'package:tourn/Ui/main/category/home/pages/community_all_posts.dart';
-import 'package:tourn/Ui/main/category/home/pages/hashtag_posts_page.dart';
+import 'package:tourn/Ui/main/category/home/pages/firebase_hashtag_posts_page.dart';
+import 'package:tourn/domain/user_repository/user_repository.dart';
+import 'package:tourn/models/user_model.dart';
+import 'package:tourn/models/post_model.dart';
+import 'package:tourn/data/post/firestore_post_repository.dart';
 
 class Homepage extends StatefulWidget {
-  const Homepage({super.key});
+  final ValueChanged<bool>? onBottomNavVisibilityChanged;
+  final double bottomNavProgress;
+
+  const Homepage({
+    super.key,
+    this.onBottomNavVisibilityChanged,
+    this.bottomNavProgress = 1,
+  });
 
   @override
   State<Homepage> createState() => _HomepageState();
@@ -22,307 +34,535 @@ class Homepage extends StatefulWidget {
 
 class _HomepageState extends State<Homepage> {
   int _selectedTabIndex = 0;
+  UserModel? _currentUser;
+  late final UserRepository _userRepository;
+  StreamSubscription<UserModel?>? _userSub;
+  HomeFeedFilter _feedFilter = HomeFeedFilter.suggested;
+
+  // Cache repository và stream để tránh tạo mới mỗi build
+  final FirestorePostRepository _postRepository = FirestorePostRepository();
+  Stream<List<PostModel>>? _publicFeedStream;
+
   final List<String> _tabs = [
     'Trending',
     'Ẩm thực',
     'Biển đảo',
     'Núi rừng',
     'Văn hóa',
+    'Khác',
   ];
 
-  // Dữ liệu bài viết theo hashtag từ người dùng chia sẻ kinh nghiệm
-  final Map<int, List<Map<String, dynamic>>> _hashtagPosts = {
-    0: [
-      // Trending
-      {
-        'hashtag': '#DaLat',
-        'title': 'Đà Lạt mùa hoa',
-        'author': 'Minh Anh',
-        'avatar': 'asset/images/employee-5.png',
-        'image': 'asset/images/anhdemo.jpeg',
-        'description': 'Check-in thiên đường hoa tại Đà Lạt',
-        'likes': 1520,
-        'posts': 89,
-        'isFavorite': false,
-        'experience':
-            'Kinh nghiệm chụp cảnh và tìm góc đẹp sau 3 lần đi Đà Lạt, mẹo tránh sương mù sớm.',
-        'itinerary':
-            'Sáng: Hồ Xuân Hương → Dinh Bảo Đại. Chiều: Vườn hoa thành phố → Chợ đêm.',
-        'expenses':
-            'Khoảng 800k - 1.2M cho 2 ngày (không tính lưu trú cao cấp).',
-      },
-      {
-        'hashtag': '#PhuQuoc',
-        'title': 'Phú Quốc đảo ngọc',
-        'author': 'Thu Hà',
-        'avatar': 'asset/images/OIP.jpg',
-        'image': 'asset/images/anhdemo2.jpg',
-        'description': 'Khám phá hòn đảo xinh đẹp nhất VN',
-        'likes': 2340,
-        'posts': 156,
-        'isFavorite': true,
-        'experience':
-            'Mẹo mua hải sản ngon, chọn khu tắm biển sạch, và tiết kiệm khi đi mùa thấp điểm.',
-        'itinerary': 'Ngày 1: Bãi Dài - Hòn Thơm; Ngày 2: Nam Đảo - Làng chài.',
-        'expenses': 'Dự trù 2-3 triệu cho 2 ngày: ăn + vé cáp + thuê xe.',
-      },
-      {
-        'hashtag': '#HoiAn',
-        'title': 'Phố cổ Hội An',
-        'author': 'Văn Đức',
-        'avatar': 'asset/images/OIP.jpg',
-        'image': 'asset/images/anhdemo3.webp',
-        'description': 'Đêm phố cổ lung linh đèn lồng',
-        'likes': 1890,
-        'posts': 234,
-        'isFavorite': false,
-        'experience':
-            'Thời điểm tốt nhất là buổi tối, nhớ thử cao lầu và bánh mì Phượng.',
-        'itinerary': 'Tản bộ phố cổ → Tham quan hội quán → Ăn đêm.',
-        'expenses': 'Khoảng 300k - 600k cho ăn uống và quà lưu niệm.',
-      },
+  // Mapping hashtags to categories
+  static const Map<String, List<String>> _categoryKeywords = {
+    'Ẩm thực': [
+      'amthuc',
+      'ẩmthực',
+      'food',
+      'pho',
+      'phở',
+      'banhmi',
+      'bánhmì',
+      'buncha',
+      'búnchả',
+      'com',
+      'cơm',
+      'nhahang',
+      'nhàhàng',
+      'restaurant',
+      'cafe',
+      'coffee',
+      'caphe',
+      'càphê',
+      'monan',
+      'mónan',
+      'doan',
+      'đồăn',
+      'anvat',
+      'ănvặt',
+      'seafood',
+      'haisan',
+      'hảisản',
+      'bbq',
+      'nuong',
+      'nướng',
+      'lau',
+      'lẩu',
+      'buffet',
+      'dessert',
+      'trangmieng',
+      'trángmiệng',
     ],
-    1: [
-      // Ẩm thực
-      {
-        'hashtag': '#StreetFood',
-        'title': 'Ẩm thực đường phố',
-        'author': 'Foodie VN',
-        'avatar': 'asset/images/OIP.jpg',
-        'image': 'asset/images/anhdemo.jpeg',
-        'description': 'Khám phá món ngon đường phố',
-        'likes': 3200,
-        'posts': 567,
-        'isFavorite': true,
-        'experience': 'Nên thử món địa phương lúc tối, mang theo tiền lẻ.',
-        'itinerary': 'Đi bộ khám phá các quầy ở khu phố cổ và chợ đêm.',
-        'expenses': 'Tầm 200k - 400k cho một bữa đi ăn đường phố.',
-      },
-      {
-        'hashtag': '#PhoHaNoi',
-        'title': 'Phở Hà Nội',
-        'author': 'Hà Nội Food',
-        'avatar': 'asset/images/OIP.jpg',
-        'image': 'asset/images/anhdemo2.jpg',
-        'description': 'Tinh hoa ẩm thực Thủ đô',
-        'likes': 2890,
-        'posts': 423,
-        'isFavorite': false,
-        'experience':
-            'Chọn quán có nước dùng trong, ít mỡ; ăn kèm chanh ớt theo khẩu vị.',
-        'itinerary': 'Sáng ăn phở + tham quan Văn Miếu.',
-        'expenses': 'Khoảng 30k - 80k cho một tô phở.',
-      },
+    'Biển đảo': [
+      'phuquoc',
+      'phúquốc',
+      'nhatrang',
+      'nhatrang',
+      'danang',
+      'đànẵng',
+      'vungtau',
+      'vũngtàu',
+      'phanthiet',
+      'phanthiết',
+      'halong',
+      'hạlong',
+      'beach',
+      'bien',
+      'biển',
+      'dao',
+      'đảo',
+      'island',
+      'condao',
+      'côndảo',
+      'quangninh',
+      'quảngninh',
+      'muine',
+      'mũiné',
+      'catba',
+      'cátbà',
+      'phuyen',
+      'phúyên',
+      'quynhon',
+      'quynhơn',
+      'hoian',
+      'hộian',
+      'ocean',
+      'sea',
+      'diving',
+      'lanlặn',
+      'snorkeling',
+      'resort',
+      'langco',
+      'lăngcô',
+      'samson',
+      'sầmsơn',
+      'cualo',
+      'cửalò',
     ],
-    2: [
-      // Biển đảo
-      {
-        'hashtag': '#NhaTrang',
-        'title': 'Biển Nha Trang',
-        'author': 'Beach Lover',
-        'avatar': 'asset/images/OIP.jpg',
-        'image': 'asset/images/anhdemo3.webp',
-        'description': 'Vịnh biển đẹp nhất Việt Nam',
-        'likes': 4560,
-        'posts': 789,
-        'isFavorite': true,
-        'experience':
-            'Nên lặn ngắm san hô ở buổi sáng, và hỏi trước giá dịch vụ.',
-        'itinerary': 'Đảo Hòn Mun → Vinpearl → Bãi Trũ.',
-        'expenses': 'Khoảng 1.5 - 2 triệu cho vé tàu, lặn và ăn uống.',
-      },
-      {
-        'hashtag': '#ConDao',
-        'title': 'Côn Đảo hoang sơ',
-        'author': 'Island Hunter',
-        'avatar': 'asset/images/OIP.jpg',
-        'image': 'asset/images/anhdemo.jpeg',
-        'description': 'Thiên đường biển hoang sơ',
-        'likes': 2100,
-        'posts': 156,
-        'isFavorite': false,
-        'experience':
-            'Chuẩn bị trước giấy tờ, hỏi lịch trình tàu và tour tham quan.',
-        'itinerary': 'Tham quan di tích → Bãi biển → Ngắm rùa.',
-        'expenses': 'Dự trù 2-3 triệu tùy mùa.',
-      },
+    'Núi rừng': [
+      'dalat',
+      'đàlạt',
+      'sapa',
+      'sapá',
+      'fansipan',
+      'nui',
+      'núi',
+      'mountain',
+      'rung',
+      'rừng',
+      'forest',
+      'trekking',
+      'hiking',
+      'leodeo',
+      'leocore',
+      'hagiang',
+      'hàgiang',
+      'mocchau',
+      'mộcchâu',
+      'bana',
+      'bànà',
+      'tamđảo',
+      'tamdao',
+      'bavi',
+      'bavì',
+      'bavì',
+      'maisau',
+      'maichâu',
+      'puluong',
+      'pùluông',
+      'batxat',
+      'bátxát',
+      'yentu',
+      'yêntử',
+      'langbiang',
+      'camping',
+      'camprai',
+      'phượt',
+      'phuot',
+      'baclieu',
+      'bắcliêu',
     ],
-    3: [
-      // Núi rừng
-      {
-        'hashtag': '#Sapa',
-        'title': 'Sapa mây phủ',
-        'author': 'Trekking VN',
-        'avatar': 'asset/images/OIP.jpg',
-        'image': 'asset/images/anhdemo3.webp',
-        'description': 'Chinh phục đỉnh Fansipan',
-        'likes': 3890,
-        'posts': 456,
-        'isFavorite': true,
-        'experience':
-            'Chuẩn bị quần áo ấm, giày trekking, và tham khảo thời tiết 1 tuần trước khi đi.',
-        'itinerary':
-            'Ngày 1: Trekking bản Cát Cát; Ngày 2: Lên Fansipan bằng cáp treo.',
-        'expenses':
-            'Ước tính 1.5 - 2 triệu cho 2 ngày (bao gồm vé cáp và guide).',
-      },
-      {
-        'hashtag': '#HaGiang',
-        'title': 'Hà Giang loop',
-        'author': 'Biker Club',
-        'avatar': 'asset/images/OIP.jpg',
-        'image': 'asset/images/anhdemo2.jpg',
-        'description': 'Cung đường đẹp nhất Việt Nam',
-        'likes': 5670,
-        'posts': 890,
-        'isFavorite': false,
-        'experience': 'Chuẩn bị xe kỹ, check lốp, và mang theo đồ ấm cho đêm.',
-        'itinerary': 'Hành trình 3 ngày: Quản Bạ → Yên Minh → Đồng Văn.',
-        'expenses':
-            'Tùy xe và số ngày, 2 - 3 triệu cho chi phí nhiên liệu và ăn uống.',
-      },
-    ],
-    4: [
-      // Văn hóa
-      {
-        'hashtag': '#HueCoDo',
-        'title': 'Huế cố đô',
-        'author': 'Heritage VN',
-        'avatar': 'asset/images/OIP.jpg',
-        'image': 'asset/images/anhdemo.jpeg',
-        'description': 'Di sản văn hóa thế giới',
-        'likes': 2340,
-        'posts': 345,
-        'isFavorite': true,
-        'experience':
-            'Thời điểm tham quan tốt là sáng sớm để tránh nắng; thử đặc sản bún bò Huế.',
-        'itinerary': 'Thăm Đại Nội → Lăng Tự Đức → Sông Hương.',
-        'expenses': 'Khoảng 300k - 700k cho 1-2 ngày tham quan.',
-      },
-      {
-        'hashtag': '#MyTho',
-        'title': 'Miền Tây sông nước',
-        'author': 'Delta Explorer',
-        'avatar': 'asset/images/OIP.jpg',
-        'image': 'asset/images/anhdemo.jpeg',
-        'description': 'Văn hóa miệt vườn sông nước',
-        'likes': 1890,
-        'posts': 234,
-        'isFavorite': false,
-      },
+    'Văn hóa': [
+      'vanhoa',
+      'vănhóa',
+      'culture',
+      'lehoi',
+      'lễhội',
+      'festival',
+      'temple',
+      'chua',
+      'chùa',
+      'den',
+      'đền',
+      'pagoda',
+      'museum',
+      'baotang',
+      'bảotàng',
+      'ditich',
+      'ditích',
+      'heritage',
+      'history',
+      'lichsu',
+      'lịchsử',
+      'traditional',
+      'truyenthong',
+      'truyềnthống',
+      'hue',
+      'huế',
+      'hoangcung',
+      'hoàngcung',
+      'palace',
+      'ancient',
+      'cổđại',
+      'codai',
+      'maihong',
+      'folklor',
+      'danca',
+      'dânca',
     ],
   };
 
+  void _showLoginRequired() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Cần đăng nhập để thực hiện thao tác này')),
+    );
+  }
+
+  // Remove Vietnamese diacritics for comparison
+  static String _removeDiacritics(String input) {
+    const diacritics =
+        'àáảãạăắằẳẵặâấầẩẫậèéẻẽẹêếềểễệìíỉĩịòóỏõọôốồổỗộơớờởỡợùúủũụưứừửữựỳýỷỹỵđ';
+    const replacements =
+        'aaaaaaaaaaaaaaaaaeeeeeeeeeeeiiiiiooooooooooooooooouuuuuuuuuuuyyyyyd';
+
+    var result = input.toLowerCase();
+    for (int i = 0; i < diacritics.length; i++) {
+      result = result.replaceAll(diacritics[i], replacements[i]);
+    }
+    return result;
+  }
+
+  // Get category for a hashtag
+  String _getCategoryForHashtag(String hashtag) {
+    // Normalize: lowercase and remove special chars
+    final normalizedWithDiacritics = hashtag.toLowerCase().replaceAll(
+      RegExp(
+        r'[^a-zA-Z0-9àáảãạăắằẳẵặâấầẩẫậèéẻẽẹêếềểễệìíỉĩịòóỏõọôốồổỗộơớờởỡợùúủũụưứừửữựỳýỷỹỵđ]',
+      ),
+      '',
+    );
+    // Also remove diacritics for comparison
+    final normalizedNoDiacritics = _removeDiacritics(normalizedWithDiacritics);
+
+    // First pass: check for exact match (prioritize specific locations)
+    for (final entry in _categoryKeywords.entries) {
+      for (final keyword in entry.value) {
+        final keywordNoDiacritics = _removeDiacritics(keyword);
+        // Exact match takes priority
+        if (normalizedNoDiacritics == keywordNoDiacritics ||
+            normalizedWithDiacritics == keyword) {
+          return entry.key;
+        }
+      }
+    }
+
+    // Second pass: check for partial containment (longer keywords first)
+    // Sort entries by keyword length (descending) to match longer/specific keywords first
+    final sortedEntries = _categoryKeywords.entries.toList();
+    for (final entry in sortedEntries) {
+      // Sort keywords by length (longest first) to prioritize specific matches
+      final sortedKeywords = List<String>.from(entry.value)
+        ..sort((a, b) => b.length.compareTo(a.length));
+      for (final keyword in sortedKeywords) {
+        final keywordNoDiacritics = _removeDiacritics(keyword);
+        // Skip short generic keywords like 'dao', 'nui' if hashtag is longer
+        if (keyword.length <= 3 && normalizedWithDiacritics.length > 5) {
+          continue;
+        }
+        if (normalizedNoDiacritics.contains(keywordNoDiacritics) ||
+            normalizedWithDiacritics.contains(keyword)) {
+          return entry.key;
+        }
+      }
+    }
+    return 'Khác';
+  }
+
+  // Check if a post belongs to a category
+  bool _postBelongsToCategory(PostModel post, String category) {
+    if (post.hashtags.isEmpty) return false;
+    return post.hashtags.any((h) => _getCategoryForHashtag(h) == category);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _userRepository = context.read<UserRepository>();
+    // Use stream to keep avatar in sync when changed
+    _userSub = _userRepository.streamCurrentUser().listen((user) {
+      if (mounted) {
+        setState(() {
+          _currentUser = user;
+        });
+      }
+    });
+    // Cache stream để tránh tạo mới mỗi build
+    _publicFeedStream = _postRepository.getPublicFeed(limit: 50);
+  }
+
+  // temporary map removed – feed will come from Firebase
+
   @override
   void dispose() {
+    _userSub?.cancel();
     super.dispose();
   }
 
-  void _toggleFavorite(int index) {
-    setState(() {
-      _hashtagPosts[_selectedTabIndex]![index]['isFavorite'] =
-          !(_hashtagPosts[_selectedTabIndex]![index]['isFavorite'] as bool);
-    });
+  Map<String, dynamic> _postToMap(PostModel p) {
+    // Use appropriate label based on hashtags and experience entries
+    String hashtagLabel;
+    if (p.hashtags.isNotEmpty) {
+      // Get category for the first hashtag
+      hashtagLabel = _getCategoryForHashtag(p.hashtags.first);
+      // If category is "Khác", show original hashtag with # prefix for display
+      if (hashtagLabel == 'Khác') {
+        hashtagLabel = '#${p.hashtags.first}';
+      }
+    } else if (p.experienceEntries.isNotEmpty) {
+      hashtagLabel = 'Kinh nghiệm';
+    } else {
+      hashtagLabel = 'Khác';
+    }
+
+    // Check if current user has liked the post
+    final isLiked = _currentUser != null && p.likes.contains(_currentUser!.uid);
+
+    return {
+      'hashtag': hashtagLabel,
+      'title': p.content.length > 20
+          ? '${p.content.substring(0, 20)}...'
+          : p.content,
+      'author': p.authorName,
+      'avatar': p.authorPhotoUrl ?? '',
+      'image': p.mediaUrls.isNotEmpty ? p.mediaUrls.first : '',
+      'backgroundColor': p.backgroundColor,
+      'description': p.content,
+      'likes': p.likes.length,
+      'posts': p.commentCount,
+      'isFavorite': isLiked,
+    };
   }
 
   @override
   Widget build(BuildContext context) {
+    final headerProgress = widget.bottomNavProgress.clamp(0.0, 1.0);
+    final isHomeHeaderVisible = headerProgress > 0.05;
+    final headerOffsetY = -72 * (1 - headerProgress);
+    final headerSpace = 92.0 * headerProgress;
+
     return Scaffold(
       backgroundColor: Colors.grey[50],
       body: SafeArea(
-        child: CustomScrollView(
-          slivers: [
-            // Header cố định
-            SliverToBoxAdapter(
-              child: CommunityHeader(
-                onAddTap: () => bottom(context),
-                onProfileTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => const profile()),
-                ),
-              ),
-            ),
-            // Search bar
-            SliverToBoxAdapter(
-              child: CommunitySearch(
-                onSearchTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => const SearchPage()),
-                ),
-                onFilterTap: () {},
-              ),
-            ),
-            // Section title và tabs
-            SliverToBoxAdapter(
-              child: CommunitySectionTitle(
-                onViewAll: () {
-                  final allPosts = _hashtagPosts.values
-                      .expand((x) => x)
-                      .toList();
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) =>
-                          CommunityAllPostsPage(posts: allPosts),
-                    ),
-                  );
-                },
-              ),
-            ),
-            // Tab chips
-            SliverToBoxAdapter(
-              child: CommunityTabChips(
-                tabs: _tabs,
-                selectedIndex: _selectedTabIndex,
-                onSelected: (i) => setState(() => _selectedTabIndex = i),
-              ),
-            ),
-            // Destination cards
-            SliverToBoxAdapter(
-              child: CommunityDestinationCards(
-                posts: _hashtagPosts[_selectedTabIndex] ?? [],
-                onToggleFavorite: (i) => _toggleFavorite(i),
-                onCardTap: (i) {
-                  final postsForTab = _hashtagPosts[_selectedTabIndex] ?? [];
-                  final post = postsForTab[i];
-                  // Lọc chỉ những bài có cùng hashtag với thẻ được chọn
-                  final related = postsForTab
-                      .where((p) => p['hashtag'] == post['hashtag'])
-                      .toList();
-                  // Đưa bài vừa chạm lên đầu, các bài còn lại sắp xếp theo lượt like giảm dần
-                  related.removeWhere((p) => p['title'] == post['title']);
-                  related.sort(
-                    (a, b) => (b['likes'] as int? ?? 0).compareTo(
-                      a['likes'] as int? ?? 0,
-                    ),
-                  );
-                  final ordered = [post, ...related];
-
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => HashtagPostsPage(
-                        hashtag: post['hashtag'] as String,
-                        posts: ordered,
+        bottom: false,
+        child: Stack(
+          children: [
+            CustomScrollView(
+              slivers: [
+                SliverToBoxAdapter(child: SizedBox(height: headerSpace)),
+                SliverToBoxAdapter(
+                  child: CommunitySearch(
+                    onSearchTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const SearchPage(),
                       ),
                     ),
-                  );
-                },
-              ),
+                    onFilterTap: _showFeedFilterSheet,
+                  ),
+                ),
+                // Section title và tabs
+                SliverToBoxAdapter(
+                  child: CommunitySectionTitle(
+                    onViewAll: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (c) => const _AllCommunityPostsPage(),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                // Tab chips
+                SliverToBoxAdapter(
+                  child: CommunityTabChips(
+                    tabs: _tabs,
+                    selectedIndex: _selectedTabIndex,
+                    onSelected: (i) => setState(() => _selectedTabIndex = i),
+                  ),
+                ),
+                // Destination cards backed by Firebase feed (only posts with hashtags)
+                SliverToBoxAdapter(
+                  child: StreamBuilder<List<PostModel>>(
+                    stream: _publicFeedStream,
+                    builder: (context, snap) {
+                      if (snap.connectionState == ConnectionState.waiting) {
+                        return const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 16),
+                          child: Center(child: CircularProgressIndicator()),
+                        );
+                      }
+                      final all = snap.data ?? [];
+
+                      // Filter based on selected tab
+                      List<PostModel> posts;
+                      if (_selectedTabIndex == 5) {
+                        // "Khác" tab: show posts with hashtags that don't match any category
+                        // OR posts without hashtags but with experience sharing
+                        posts = all.where((p) {
+                          if (p.hashtags.isEmpty) {
+                            return p.experienceEntries.isNotEmpty;
+                          }
+                          // Posts with hashtags that don't belong to any defined category
+                          return !p.hashtags.any(
+                            (h) => _getCategoryForHashtag(h) != 'Khác',
+                          );
+                        }).toList();
+                      } else if (_selectedTabIndex == 0) {
+                        // "Trending" tab: only show posts with experience sharing enabled
+                        // Sort by engagement (likes + comments) - highest first
+                        posts = all
+                            .where((p) => p.experienceEntries.isNotEmpty)
+                            .toList();
+                        // Sort by engagement - highest first
+                        posts.sort((a, b) {
+                          final engagementA = a.likes.length + a.commentCount;
+                          final engagementB = b.likes.length + b.commentCount;
+                          // If same engagement, sort by most recent
+                          if (engagementA == engagementB) {
+                            return b.createdAt.compareTo(a.createdAt);
+                          }
+                          return engagementB.compareTo(engagementA);
+                        });
+                      } else {
+                        // Category tabs: filter by hashtag category mapping
+                        final category = _tabs[_selectedTabIndex];
+                        posts = all
+                            .where((p) => _postBelongsToCategory(p, category))
+                            .toList();
+                      }
+                      if (posts.isEmpty) {
+                        return const SizedBox.shrink();
+                      }
+                      return CommunityDestinationCards(
+                        posts: posts.map(_postToMap).toList(),
+                        onToggleFavorite: (i) async {
+                          if (_currentUser == null) {
+                            _showLoginRequired();
+                            return;
+                          }
+                          final post = posts[i];
+                          final postRepo = FirestorePostRepository();
+                          final isLiked = post.likes.contains(
+                            _currentUser!.uid,
+                          );
+                          if (isLiked) {
+                            await postRepo.unlikePost(post.id);
+                          } else {
+                            await postRepo.likePost(post.id);
+                          }
+                        },
+
+                        onHashtagTap: (i, hashtag) {
+                          final selected = posts[i];
+                          // If hashtag starts with #, extract the actual hashtag
+                          final cleanHashtag = hashtag.startsWith('#')
+                              ? hashtag.substring(1)
+                              : hashtag;
+                          // Navigate to hashtag posts page
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (c) => FirebaseHashtagPostsPage(
+                                hashtag: cleanHashtag,
+                                selectedPost: selected,
+                              ),
+                            ),
+                          );
+                        },
+                        onCardTap: (i) {
+                          // Navigate to category posts page with all posts from current tab
+                          final category = _tabs[_selectedTabIndex];
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (c) => _CategoryPostsPage(
+                                category: category,
+                                posts: posts,
+                                selectedPostIndex: i,
+                              ),
+                            ),
+                          );
+                        },
+                      );
+                    },
+                  ),
+                ),
+                // Phần nội dung gốc (posts, stories)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
+                  ),
+                ),
+                // Liststory horizontal scroll
+                SliverToBoxAdapter(child: Liststory()),
+                // Newfeed - tích hợp Firebase để hiển thị bài viết từ database
+                FirebaseNewfeed(filter: _feedFilter),
+              ],
             ),
-            // Phần nội dung gốc (posts, stories)
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 8,
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: IgnorePointer(
+                ignoring: true,
+                child: Transform.translate(
+                  offset: Offset(0, headerOffsetY),
+                  child: Opacity(
+                    opacity: headerProgress,
+                    child: Container(height: 92, color: Colors.white),
+                  ),
                 ),
               ),
             ),
-            // Liststory horizontal scroll
-            SliverToBoxAdapter(child: Liststory()),
-            // Newfeed - tích hợp trực tiếp vào CustomScrollView
-            const Newfeed(),
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: IgnorePointer(
+                ignoring: !isHomeHeaderVisible,
+                child: Transform.translate(
+                  offset: Offset(0, headerOffsetY),
+                  child: Opacity(
+                    opacity: headerProgress,
+                    child: CommunityHeader(
+                      onAddTap: () => bottom(context),
+                      onProfileTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) =>
+                              const Profile(showBottomNav: true, initialTab: 0),
+                        ),
+                      ),
+                      userName: _currentUser?.displayName,
+                      userPhotoUrl: _currentUser?.photoUrl,
+                    ),
+                  ),
+                ),
+              ),
+            ),
           ],
         ),
       ),
@@ -338,4 +578,209 @@ class _HomepageState extends State<Homepage> {
   // Tab chips moved to `CommunityTabChips` widget
 
   // Destination cards moved to `CommunityDestinationCards` widget
+
+  void _showFeedFilterSheet() {
+    showModalBottomSheet(
+      context: context,
+      showDragHandle: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 8, 16, 4),
+                child: Text(
+                  'Lựa chọn nội dung',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+              ),
+              _filterOptionTile(
+                title: 'Đề xuất',
+                value: HomeFeedFilter.suggested,
+                subtitle:
+                    'Nội dung phù hợp với sở thích và những điều bạn quan tâm',
+              ),
+              _filterOptionTile(
+                title: 'Bạn bè',
+                value: HomeFeedFilter.friends,
+                subtitle:
+                    'Theo dõi mọi khoảnh khắc và bài viết từ bạn bè của bạn',
+              ),
+              _filterOptionTile(
+                title: 'Đã theo dõi',
+                value: HomeFeedFilter.following,
+                subtitle:
+                    'Chỉ hiển thị nội dung từ những người bạn chọn theo dõi',
+              ),
+              _filterOptionTile(
+                title: 'Khám phá',
+                value: HomeFeedFilter.explore,
+                subtitle:
+                    'Khám phá xu hướng mới và nội dung đa dạng không giới hạn',
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _filterOptionTile({
+    required String title,
+    required HomeFeedFilter value,
+    String? subtitle,
+  }) {
+    final isSelected = _feedFilter == value;
+    return ListTile(
+      leading: Icon(
+        isSelected ? Icons.radio_button_checked : Icons.radio_button_off,
+        color: isSelected ? const Color(0xFF113953) : Colors.grey,
+      ),
+      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
+      subtitle: subtitle == null ? null : Text(subtitle),
+      onTap: () {
+        setState(() {
+          _feedFilter = value;
+        });
+        Navigator.pop(context);
+      },
+    );
+  }
+}
+
+// Page to show all community posts from all categories
+class _AllCommunityPostsPage extends StatefulWidget {
+  const _AllCommunityPostsPage();
+
+  @override
+  State<_AllCommunityPostsPage> createState() => _AllCommunityPostsPageState();
+}
+
+class _AllCommunityPostsPageState extends State<_AllCommunityPostsPage> {
+  late final Stream<List<PostModel>> _feedStream;
+
+  @override
+  void initState() {
+    super.initState();
+    _feedStream = FirestorePostRepository().getPublicFeed(limit: 100);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Kinh nghiệm từ cộng đồng'),
+        elevation: 0,
+      ),
+      body: StreamBuilder<List<PostModel>>(
+        stream: _feedStream,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          final posts = snapshot.data ?? [];
+          // Filter posts with hashtags or experience entries
+          final filtered = posts
+              .where(
+                (p) => p.hashtags.isNotEmpty || p.experienceEntries.isNotEmpty,
+              )
+              .toList();
+
+          if (filtered.isEmpty) {
+            return const Center(child: Text('Chưa có bài viết nào'));
+          }
+
+          return ListView.builder(
+            padding: const EdgeInsets.all(8),
+            itemCount: filtered.length,
+            itemBuilder: (context, index) {
+              return FirebasePostCard(post: filtered[index]);
+            },
+          );
+        },
+      ),
+    );
+  }
+}
+
+// Page to show posts from a specific category with scrolling
+class _CategoryPostsPage extends StatefulWidget {
+  final String category;
+  final List<PostModel> posts;
+  final int selectedPostIndex;
+
+  const _CategoryPostsPage({
+    required this.category,
+    required this.posts,
+    required this.selectedPostIndex,
+  });
+
+  @override
+  State<_CategoryPostsPage> createState() => _CategoryPostsPageState();
+}
+
+class _CategoryPostsPageState extends State<_CategoryPostsPage> {
+  late ScrollController _scrollController;
+  final Map<int, GlobalKey> _itemKeys = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController = ScrollController();
+    // Create keys for all items
+    for (int i = 0; i < widget.posts.length; i++) {
+      _itemKeys[i] = GlobalKey();
+    }
+    // Scroll to selected post after build
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _scrollToSelectedPost();
+    });
+  }
+
+  void _scrollToSelectedPost() {
+    if (widget.selectedPostIndex > 0 &&
+        widget.selectedPostIndex < widget.posts.length) {
+      // Estimate position based on average card height
+      final estimatedHeight = 400.0; // Average post card height
+      final offset = widget.selectedPostIndex * estimatedHeight;
+      _scrollController.animateTo(
+        offset,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text(widget.category), elevation: 0),
+      body: ListView.builder(
+        controller: _scrollController,
+        padding: const EdgeInsets.all(8),
+        itemCount: widget.posts.length,
+        itemBuilder: (context, index) {
+          return Padding(
+            key: _itemKeys[index],
+            padding: const EdgeInsets.only(bottom: 8),
+            child: FirebasePostCard(post: widget.posts[index]),
+          );
+        },
+      ),
+    );
+  }
 }

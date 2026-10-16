@@ -1,11 +1,18 @@
 // đây là file chứa code của bottom sheet trong trang home hình dấu + ngoài màn hinh chính của home
 import 'package:flutter/material.dart';
-import 'package:tourn/Ui/main/category/home/widgets/bottom_add/create_and_edit_content.dart';
-import 'package:tourn/Ui/main/category/home/widgets/check_in.dart';
-import 'package:tourn/Ui/main/category/home/widgets/bottom_add/film_reel.dart';
-import 'package:tourn/Ui/main/category/home/widgets/bottom_add/live_stream.dart';
-import 'package:tourn/Ui/main/category/home/widgets/bottom_add/create_poll.dart';
-import 'package:tourn/Ui/main/category/mail/widgets/AIbottonchat.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:tourn/Ui/main/category/home/widgets/button_add/create_and_edit_content.dart';
+import 'package:tourn/Ui/main/category/home/widgets/button_add/create_poll.dart';
+import 'package:tourn/Ui/main/category/home/widgets/button_add/film_reel.dart';
+import 'package:tourn/Ui/main/category/home/widgets/button_add/live_stream.dart';
+import 'package:tourn/Ui/main/category/messenge/widgets/AIbottonchat.dart';
+
+// project data and domain
+import '../../../../../data/post/firestore_post_repository.dart';
+import '../../../../../domain/user_repository/user_repository.dart';
+
+// local widgets
+import 'check_in.dart';
 
 Future<dynamic> bottom(BuildContext context) {
   return showModalBottomSheet(
@@ -28,15 +35,18 @@ Future<dynamic> bottom(BuildContext context) {
             // Tính chiều cao tối đa của nội dung
             final double maxSheetHeight =
                 450; // hoặc tự động tính theo nội dung
+            final double maxChildSize = (maxSheetHeight / constraints.maxHeight)
+                .clamp(0.4, 1.0);
+            // initialChildSize phải <= maxChildSize
+            final double initialChildSize = maxChildSize.clamp(
+              0.35,
+              maxChildSize,
+            );
             return DraggableScrollableSheet(
-              initialChildSize:
-                  0.53, // Kích thước ban đầu (40% chiều cao màn hình)
+              initialChildSize: initialChildSize,
               minChildSize:
                   0.35, // Kích thước tối thiểu (20% chiều cao màn hình)
-              maxChildSize: (maxSheetHeight / constraints.maxHeight).clamp(
-                0.0,
-                1.0,
-              ),
+              maxChildSize: maxChildSize,
               builder: (context, scrollController) {
                 return Container(
                   decoration: BoxDecoration(
@@ -76,8 +86,7 @@ Future<dynamic> bottom(BuildContext context) {
                         onTap: () {
                           Navigator.of(context).pop(); // Đóng bottom sheet
                           // Chuyển đến trang tạo và chỉnh sửa nội dung
-                          Navigator.push(
-                            context,
+                          Navigator.of(context, rootNavigator: true).push(
                             MaterialPageRoute(
                               builder: (context) =>
                                   const createandeditcontent(),
@@ -93,15 +102,18 @@ Future<dynamic> bottom(BuildContext context) {
                       // Check in -> mở trang CheckIn (trả về kết quả khi chọn vị trí)
                       InkWell(
                         onTap: () async {
-                          Navigator.of(context).pop();
-                          final result = await Navigator.push(
+                          final scaffoldMessenger = ScaffoldMessenger.of(
                             context,
+                          );
+                          final navigator = Navigator.of(context);
+                          navigator.pop();
+                          final result = await navigator.push(
                             MaterialPageRoute(
                               builder: (context) => const CheckIn(),
                             ),
                           );
                           if (result != null) {
-                            ScaffoldMessenger.of(context).showSnackBar(
+                            scaffoldMessenger.showSnackBar(
                               SnackBar(content: Text('Check in: $result')),
                             );
                           }
@@ -115,15 +127,18 @@ Future<dynamic> bottom(BuildContext context) {
                       // Thước phim
                       InkWell(
                         onTap: () async {
-                          Navigator.of(context).pop();
-                          final r = await Navigator.push(
+                          final scaffoldMessenger = ScaffoldMessenger.of(
                             context,
+                          );
+                          final navigator = Navigator.of(context);
+                          navigator.pop();
+                          final r = await navigator.push(
                             MaterialPageRoute(
                               builder: (context) => const FilmReelPage(),
                             ),
                           );
                           if (r != null && r is Map) {
-                            ScaffoldMessenger.of(context).showSnackBar(
+                            scaffoldMessenger.showSnackBar(
                               SnackBar(
                                 content: Text(
                                   'Đã tạo thước phim: ${r['title']}',
@@ -161,19 +176,56 @@ Future<dynamic> bottom(BuildContext context) {
                       // Đặt câu hỏi (Poll)
                       InkWell(
                         onTap: () async {
-                          Navigator.of(context).pop();
-                          final poll = await Navigator.push(
+                          // Save references before popping to avoid deactivated widget error
+                          final scaffoldMessenger = ScaffoldMessenger.of(
                             context,
+                          );
+                          final navigator = Navigator.of(context);
+                          UserRepository? userRepo;
+                          try {
+                            userRepo = context.read<UserRepository>();
+                          } catch (_) {}
+
+                          navigator.pop();
+                          final poll = await navigator.push(
                             MaterialPageRoute(
                               builder: (context) => const CreatePollPage(),
                             ),
                           );
                           if (poll != null && poll is Map) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Đã tạo cuộc thăm dò'),
-                              ),
-                            );
+                            // create a post for this poll/trip selection
+                            final question = poll['question'] as String?;
+                            final tripId = poll['tripId'] as String?;
+                            if (question != null && tripId != null) {
+                              final postRepo = FirestorePostRepository();
+                              // determine author name and photo
+                              String authorName = 'Người dùng';
+                              String? authorPhotoUrl;
+                              try {
+                                if (userRepo != null) {
+                                  final currentUser = await userRepo
+                                      .getCurrentUser();
+                                  if (currentUser?.displayName != null &&
+                                      currentUser!.displayName.isNotEmpty) {
+                                    authorName = currentUser.displayName;
+                                    authorPhotoUrl = currentUser.photoUrl;
+                                  }
+                                }
+                              } catch (_) {}
+                              await postRepo.createPost(
+                                content: question,
+                                authorName: authorName,
+                                authorPhotoUrl: authorPhotoUrl,
+                                tripId: tripId,
+                              );
+                              scaffoldMessenger.showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'Đã tạo bài viết với chuyến đi',
+                                  ),
+                                ),
+                              );
+                            }
                           }
                         },
                         child: const ListTile(

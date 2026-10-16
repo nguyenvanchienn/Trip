@@ -1,14 +1,13 @@
 {
   "project_info": {
-    "project_number": "1009935937244",
-    "firebase_url": "https://trip-995d7-default-rtdb.asia-southeast1.firebasedatabase.app",
-    "project_id": "trip-995d7",
-    "storage_bucket": "trip-995d7.firebasestorage.app"
+    "project_number": "857914473616",
+    "project_id": "dacs-c7048",
+    "storage_bucket": "dacs-c7048.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:1009935937244:android:34175ef7b6230501158e19",
+        "mobilesdk_app_id": "1:857914473616:android:e5bea13f878a6e2f34ec15",
         "android_client_info": {
           "package_name": "com.example.tourn"
         }
@@ -16,7 +15,7 @@
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyAjIZN4BRMgLmab4lH-IjQ3TQY7_VJ5oNA"
+          "current_key": "AIzaSyCi_8XhB_Yv9rZwMPoq2swGuIH4Z8q6840"
         }
       ],
       "services": {

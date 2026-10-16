@@ -2,6 +2,10 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:tourn/data/firebase/firebase_activity_service.dart';
+import 'package:tourn/data/post/firestore_post_repository.dart';
+import 'package:tourn/models/post_model.dart';
+import 'package:tourn/Ui/main/category/favorites/pages/Baiviet.dart';
 
 class KhoLuuTruPage extends StatefulWidget {
   const KhoLuuTruPage({super.key});
@@ -13,17 +17,23 @@ class KhoLuuTruPage extends StatefulWidget {
 class _KhoLuuTruPageState extends State<KhoLuuTruPage>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  final List<String> _tabs = ['Places', 'Notes', 'Trips'];
+  final List<String> _tabs = ['Bài viết', 'Địa điểm', 'Ghi chú'];
+
+  // Firebase services
+  final FirebaseActivityService _activityService = FirebaseActivityService();
+  final FirestorePostRepository _postRepository = FirestorePostRepository();
+
+  // Saved posts from Firebase
+  List<PostModel> _savedPosts = [];
+  bool _loadingPosts = true;
 
   final Map<String, List<Map<String, dynamic>>> _items = {
-    'Places': [],
-    'Notes': [],
-    'Trips': [],
+    'Địa điểm': [],
+    'Ghi chú': [],
   };
   final Map<String, List<Map<String, dynamic>>> _filtered = {
-    'Places': [],
-    'Notes': [],
-    'Trips': [],
+    'Địa điểm': [],
+    'Ghi chú': [],
   };
 
   bool _loading = true;
@@ -34,12 +44,45 @@ class _KhoLuuTruPageState extends State<KhoLuuTruPage>
     super.initState();
     _tabController = TabController(length: _tabs.length, vsync: this);
     _loadAll();
+    _loadSavedPosts();
+  }
+
+  Future<void> _loadSavedPosts() async {
+    setState(() => _loadingPosts = true);
+    try {
+      final activities = await _activityService.getSavedPosts(limit: 100);
+      final posts = <PostModel>[];
+
+      for (final activity in activities) {
+        if (activity.postId != null) {
+          try {
+            final post = await _postRepository.getPostById(activity.postId!);
+            if (post != null) {
+              posts.add(post);
+            }
+          } catch (_) {}
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _savedPosts = posts;
+          _loadingPosts = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _loadingPosts = false);
+      }
+    }
   }
 
   Future<void> _loadAll() async {
     setState(() => _loading = true);
     final prefs = await SharedPreferences.getInstance();
-    for (final tab in _tabs) {
+    // Only load local storage tabs (not 'Bài viết' which is from Firebase)
+    final localTabs = _tabs.where((t) => t != 'Bài viết').toList();
+    for (final tab in localTabs) {
       final raw = prefs.getStringList('storage_$tab') ?? [];
       final list = raw
           .map((s) {
@@ -173,9 +216,180 @@ class _KhoLuuTruPageState extends State<KhoLuuTruPage>
     super.dispose();
   }
 
+  Widget _buildSavedPostsTab() {
+    if (_savedPosts.isEmpty) {
+      return const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.bookmark_border, size: 64, color: Colors.grey),
+            SizedBox(height: 16),
+            Text(
+              'Chưa có bài viết đã lưu',
+              style: TextStyle(fontSize: 16, color: Colors.grey),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return GridView.builder(
+      padding: const EdgeInsets.all(12),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        crossAxisSpacing: 8,
+        mainAxisSpacing: 8,
+        childAspectRatio: 0.8,
+      ),
+      itemCount: _savedPosts.length,
+      itemBuilder: (context, index) {
+        final post = _savedPosts[index];
+        return _buildSavedPostCard(post);
+      },
+    );
+  }
+
+  Widget _buildSavedPostCard(PostModel post) {
+    return GestureDetector(
+      onTap: () {
+        Navigator.of(
+          context,
+        ).push(MaterialPageRoute(builder: (_) => Baiviet(postId: post.id)));
+      },
+      child: Card(
+        clipBehavior: Clip.antiAlias,
+        child: Stack(
+          children: [
+            // Thumbnail
+            if (post.mediaUrls.isNotEmpty)
+              Positioned.fill(
+                child: Image.network(
+                  post.mediaUrls.first,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => Container(
+                    color: Colors.grey[200],
+                    child: const Icon(
+                      Icons.image,
+                      size: 40,
+                      color: Colors.grey,
+                    ),
+                  ),
+                ),
+              )
+            else
+              Positioned.fill(
+                child: Container(
+                  color: Colors.grey[200],
+                  child: const Icon(
+                    Icons.article,
+                    size: 40,
+                    color: Colors.grey,
+                  ),
+                ),
+              ),
+            // Content overlay
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Colors.transparent, Colors.black.withOpacity(0.7)],
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      post.content.length > 50
+                          ? '${post.content.substring(0, 50)}...'
+                          : post.content,
+                      style: const TextStyle(color: Colors.white, fontSize: 12),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.favorite,
+                          size: 14,
+                          color: Colors.white,
+                        ),
+                        const SizedBox(width: 4),
+                        Flexible(
+                          child: Text(
+                            '${post.likes}',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            // Unsave button
+            Positioned(
+              top: 4,
+              right: 4,
+              child: IconButton(
+                icon: const Icon(Icons.bookmark, color: Colors.orange),
+                onPressed: () => _unsavePost(post),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _unsavePost(PostModel post) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('Bỏ lưu bài viết'),
+        content: const Text('Bạn có chắc muốn bỏ lưu bài viết này không?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(c).pop(false),
+            child: const Text('Hủy'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(c).pop(true),
+            child: const Text('Bỏ lưu'),
+          ),
+        ],
+      ),
+    );
+
+    if (ok == true) {
+      await FirebaseActivityService().unsavePost(post.id);
+      setState(() {
+        _savedPosts.removeWhere((p) => p.id == post.id);
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Đã bỏ lưu bài viết')));
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final currentTab = _tabs[_tabController.index];
+    final isSavedPostsTab = currentTab == 'Bài viết';
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Kho lưu trữ'),
@@ -184,28 +398,42 @@ class _KhoLuuTruPageState extends State<KhoLuuTruPage>
           tabs: _tabs.map((t) => Tab(text: t)).toList(),
         ),
         actions: [
+          if (!isSavedPostsTab)
+            IconButton(
+              icon: const Icon(Icons.search),
+              onPressed: () async {
+                final q = await showSearch<String>(
+                  context: context,
+                  delegate: _StorageSearchDelegate(_items[currentTab] ?? []),
+                );
+                if (q != null) _applyFilter(currentTab, q);
+              },
+            ),
           IconButton(
-            icon: const Icon(Icons.search),
-            onPressed: () async {
-              final q = await showSearch<String>(
-                context: context,
-                delegate: _StorageSearchDelegate(_items[currentTab] ?? []),
-              );
-              if (q != null) _applyFilter(currentTab, q);
+            icon: const Icon(Icons.refresh),
+            onPressed: () {
+              _loadSavedPosts();
+              _loadAll();
             },
           ),
-          IconButton(icon: const Icon(Icons.refresh), onPressed: _loadAll),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _addItem(currentTab),
-        child: const Icon(Icons.add),
-      ),
+      floatingActionButton: isSavedPostsTab
+          ? null
+          : FloatingActionButton(
+              onPressed: () => _addItem(currentTab),
+              child: const Icon(Icons.add),
+            ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : TabBarView(
               controller: _tabController,
               children: _tabs.map((tab) {
+                // Special handling for saved posts tab
+                if (tab == 'Bài viết') {
+                  return _buildSavedPostsTab();
+                }
+
                 final list = _filtered[tab] ?? [];
                 return list.isEmpty
                     ? Center(child: Text('Không có mục trong $tab'))

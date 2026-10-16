@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:tourn/Ui/welcome/welcome_page.dart';
+import 'package:tourn/Ui/domain/domain_authentication_repository/authentication_repository.dart';
+import 'package:provider/provider.dart';
+import 'package:tourn/Ui/splash/splash.dart';
 
 Future<dynamic> confirm(BuildContext context) {
   return showDialog(
@@ -43,14 +45,37 @@ Future<dynamic> confirm(BuildContext context) {
                   const SizedBox(width: 8),
 
                   ElevatedButton(
-                    onPressed: () {
-                      Navigator.pop(dialogContext);
-                      Navigator.push(
-                        context,
+                    onPressed: () async {
+                      final nav = Navigator.of(
+                        dialogContext,
+                        rootNavigator: true,
+                      );
+                      final authRepo = dialogContext
+                          .read<AuthenticationRepository>();
+
+                      nav.pop(); // close dialog
+
+                      // close drawer if this dialog was opened from one
+                      if (context.mounted) {
+                        Scaffold.maybeOf(context)?.closeEndDrawer();
+                      }
+
+                      // perform sign out in background to avoid UI hangs
+                      Future<void>.microtask(() async {
+                        try {
+                          await authRepo.signOut().timeout(
+                            const Duration(seconds: 5),
+                          );
+                        } catch (_) {
+                          // ignore errors
+                        }
+                      });
+
+                      nav.pushAndRemoveUntil(
                         MaterialPageRoute(
-                          builder: (_) =>
-                              const WelcomePage(isFirsTimeinstallApp: false),
+                          builder: (ctx) => const SplashScreen(),
                         ),
+                        (route) => false,
                       );
                     },
                     child: const Text("OK"),
